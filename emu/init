@@ -1,0 +1,61 @@
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export OPENVAS_STATE_DIR=/var/lib/openvaz
+export OPENVAS_KIOSK=1
+export OPENVAS_CAR=/dev/ttyAMA1
+
+# initramfs уже перенёс proc, sys и dev.
+if [ ! -d /proc/1 ]; then
+    mount -t proc proc /proc
+fi
+if [ ! -d /sys/class ]; then
+    mount -t sysfs sysfs /sys
+fi
+if [ ! -e /dev/null ]; then
+    mount -t devtmpfs devtmpfs /dev
+fi
+mkdir -p /dev/pts /tmp /run /var/log /var/lib/openvaz
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=755 tmpfs /run
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+mount -t tmpfs -o mode=755 tmpfs /var/log
+
+if ! mount -t ext4 -o noatime /dev/vda2 /var/lib/openvaz; then
+    echo "openvaz: раздел настроек не смонтирован"
+fi
+
+echo "openvaz: корень $(awk '$2=="/"{print $4; exit}' /proc/mounts)"
+
+modprobe virtio_gpu 2>/dev/null || modprobe virtio-gpu 2>/dev/null || true
+modprobe evdev 2>/dev/null || echo "openvaz: нет модуля evdev"
+modprobe virtio_input 2>/dev/null || true
+
+i=0
+while [ ! -e /dev/fb0 ] && [ "$i" -lt 50 ]; do
+    i=$((i + 1))
+    sleep 0.1
+done
+
+if [ ! -e /dev/fb0 ]; then
+    echo "openvaz: нет /dev/fb0"
+    dmesg | tail -n 40
+    exec /bin/sh
+fi
+
+# Текстовая консоль рисует мигающий курсор поверх панели.
+if [ -e /sys/class/graphics/fbcon/cursor_blink ]; then
+    echo 0 > /sys/class/graphics/fbcon/cursor_blink || true
+fi
+for con in /sys/class/vtconsole/vtcon*; do
+    name=$(cat "$con/name" 2>/dev/null || true)
+    case "$name" in
+        *frame*) echo 0 > "$con/bind" || true ;;
+    esac
+done
+echo "openvaz: текстовый курсор выключен"
+
+while true; do
+    /usr/bin/openvaz --fb /dev/fb0
+    echo "openvaz: программа завершилась, повтор"
+    sleep 1
+done

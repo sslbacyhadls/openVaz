@@ -1,0 +1,24 @@
+[package]
+name = "openvaz"
+version = "0.1.0"
+edition = "2021"
+description = "Панель климата Lada. Первый профиль — Kalina."
+
+[features]
+default = ["window"]
+window = ["dep:winit", "dep:softbuffer"]
+
+[dependencies]
+fontdue = "0.9"
+libc = "0.2"
+tiny-skia = "0.11"
+softbuffer = { version = "0.4", optional = true, default-features = false, features = ["x11"] }
+winit = { version = "0.30", optional = true, default-features = false, features = ["x11", "rwh_06"] }
+
+[[bin]]
+name = "openvaz"
+path = "src/main.rs"
+
+[[bin]]
+name = "openvaz-car"
+path = "src/bin/car.rs"

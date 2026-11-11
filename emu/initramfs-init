@@ -1,0 +1,26 @@
+#!/bin/sh
+export PATH=/bin
+
+mkdir -p /proc /sys /dev /newroot
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+
+modprobe virtio_blk
+modprobe ext4
+
+i=0
+while [ ! -b /dev/vda1 ] && [ "$i" -lt 50 ]; do
+    i=$((i + 1))
+    sleep 0.1
+done
+
+if ! mount -t ext4 -o ro /dev/vda1 /newroot; then
+    echo "openvaz: корень не смонтирован"
+    exec /bin/sh
+fi
+
+mount --move /proc /newroot/proc
+mount --move /sys /newroot/sys
+mount --move /dev /newroot/dev
+exec switch_root /newroot /init
