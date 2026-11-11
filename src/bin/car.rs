@@ -110,7 +110,11 @@ fn draw(vehicle: &Vehicle, shown: &mut String) {
         frame.push_str(&fit(&line));
         frame.push('\n');
     }
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
     frame.push_str(&fit(&format!(
         "вентилятор     команда {:.2}   факт {:.2}",
@@ -138,7 +142,11 @@ fn draw(vehicle: &Vehicle, shown: &mut String) {
 
 fn compact(vehicle: &Vehicle) -> String {
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     format!(
         "охлаждение {} °C  задание {} °C  заслонка {:.2}  муфта {clutch}  запрос {request}  вентилятор {:.2}  ошибки {}",
         vehicle.coolant.round() as i32,
