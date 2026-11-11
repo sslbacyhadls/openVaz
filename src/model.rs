@@ -247,24 +247,13 @@ pub struct Session {
     last_repeat: Instant,
 }
 
+#[derive(Default)]
 pub struct EcuView {
     pub coolant_c: Option<i32>,
     pub errors: Vec<String>,
     pub clutch: Option<bool>,
     pub linked: bool,
     heard: Option<Instant>,
-}
-
-impl Default for EcuView {
-    fn default() -> Self {
-        Self {
-            coolant_c: None,
-            errors: Vec::new(),
-            clutch: None,
-            linked: false,
-            heard: None,
-        }
-    }
 }
 
 impl EcuView {
@@ -575,9 +564,11 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings");
-        let mut climate = Climate::default();
-        climate.face = true;
-        climate.temperature = 0.2;
+        let mut climate = Climate {
+            face: true,
+            temperature: 0.2,
+            ..Climate::default()
+        };
         let events = climate.toggle_air_conditioner();
         assert_eq!(events[0].channel, "вентилятор");
         assert_eq!(events[0].value, MIN_FAN);
@@ -687,10 +678,7 @@ mod tests {
         ecu.heard = Instant::now().checked_sub(Duration::from_secs(4));
         assert!(ecu.refresh_link());
         assert!(!ecu.linked);
-        assert_eq!(
-            ecu.apply(&CarMessage::Errors(vec!["P0217".into()])),
-            true
-        );
+        assert!(ecu.apply(&CarMessage::Errors(vec!["P0217".into()])));
         assert_eq!(ecu.errors, vec!["P0217".to_string()]);
     }
 }
