@@ -80,6 +80,10 @@ impl Vehicle {
         self.ac_request
     }
 
+    pub fn position_lines(&self) -> [String; 5] {
+        std::array::from_fn(|index| format!("положение {index} {:.2}", self.position[index]))
+    }
+
     pub fn status_lines(&self) -> [String; 3] {
         let coolant = self.coolant.round() as i32;
         let errors = self.error.unwrap_or("нет");

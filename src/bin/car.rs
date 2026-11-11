@@ -74,6 +74,11 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream) {
                     return;
                 }
             }
+            for line in vehicle.position_lines() {
+                if write!(stream, "{line}\n").is_err() {
+                    return;
+                }
+            }
             last_status = Instant::now();
         }
         if last_dash.elapsed() >= Duration::from_millis(200) {
