@@ -52,53 +52,49 @@ impl Viewport {
 
 pub fn slider_track() -> Rect {
     Rect {
-        x: 100.0,
-        y: 156.0,
-        w: 720.0,
+        x: 440.0,
+        y: 224.0,
+        w: 488.0,
         h: 14.0,
     }
 }
 
 pub fn slider_hit() -> Rect {
     Rect {
-        x: 64.0,
-        y: 116.0,
-        w: 792.0,
-        h: 94.0,
+        x: 408.0,
+        y: 196.0,
+        w: 552.0,
+        h: 64.0,
     }
 }
 
-const BUTTON: f32 = 112.0;
-const BUTTON_GAP: f32 = 12.0;
+const BUTTON_GAP: f32 = 16.0;
 const BUTTON_X: f32 = 24.0;
+const BUTTON_W: f32 = (LAYOUT_W - BUTTON_X * 2.0 - BUTTON_GAP * 4.0) / 5.0;
 
-fn button_row(y: f32, hits: &[Hit]) -> Vec<(Hit, Rect)> {
-    hits.iter()
-        .enumerate()
-        .map(|(index, hit)| {
-            (
-                *hit,
-                Rect {
-                    x: BUTTON_X + index as f32 * (BUTTON + BUTTON_GAP),
-                    y,
-                    w: BUTTON,
-                    h: BUTTON,
-                },
-            )
-        })
-        .collect()
+fn button_row() -> [(Hit, Rect); 5] {
+    let hits = [Hit::Face, Hit::Feet, Hit::Glass, Hit::Recirc, Hit::Ac];
+    std::array::from_fn(|index| {
+        (
+            hits[index],
+            Rect {
+                x: BUTTON_X + index as f32 * (BUTTON_W + BUTTON_GAP),
+                y: 416.0,
+                w: BUTTON_W,
+                h: 96.0,
+            },
+        )
+    })
 }
 
 pub fn mode_buttons() -> [(Hit, Rect); 3] {
-    let y = LAYOUT_H - 100.0 - BUTTON - BUTTON_GAP - BUTTON;
-    let row = button_row(y, &[Hit::Face, Hit::Feet, Hit::Glass]);
+    let row = button_row();
     [row[0], row[1], row[2]]
 }
 
 pub fn lower_buttons() -> [(Hit, Rect); 2] {
-    let y = LAYOUT_H - 100.0 - BUTTON;
-    let row = button_row(y, &[Hit::Recirc, Hit::Ac]);
-    [row[0], row[1]]
+    let row = button_row();
+    [row[3], row[4]]
 }
 
 pub fn fan_buttons() -> [(Hit, Rect); 5] {
@@ -106,10 +102,10 @@ pub fn fan_buttons() -> [(Hit, Rect); 5] {
         (
             Hit::Fan(index as u8),
             Rect {
-                x: 472.0 + index as f32 * 106.0,
-                y: 360.0,
-                w: 96.0,
-                h: 100.0,
+                x: 376.0 + index as f32 * 128.0,
+                y: 312.0,
+                w: 112.0,
+                h: 64.0,
             },
         )
     })
@@ -168,6 +164,20 @@ mod tests {
             );
             assert!(rect.y > slider_hit().y + slider_hit().h);
         }
+        let controls: Vec<_> = mode_buttons()
+            .into_iter()
+            .chain(lower_buttons())
+            .chain(fan_buttons())
+            .map(|(_, rect)| rect)
+            .chain([slider_hit()])
+            .collect();
+        for (i, a) in controls.iter().enumerate() {
+            for b in &controls[i + 1..] {
+                assert!(
+                    a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y
+                );
+            }
+        }
         let track = slider_track();
         for x in [track.x, track.x + track.w * 0.5, track.x + track.w] {
             assert_eq!(hit_climate(x, track.y), Some(Hit::Slider));
@@ -177,10 +187,10 @@ mod tests {
     }
 
     #[test]
-    fn buttons_sit_in_the_lower_left() {
+    fn buttons_share_the_bottom_row() {
         for (_, rect) in mode_buttons().into_iter().chain(lower_buttons()) {
-            assert!(rect.y > LAYOUT_H * 0.4);
-            assert!(rect.x + rect.w < LAYOUT_W * 0.5);
+            assert_eq!(rect.y, 416.0);
+            assert!(rect.y + rect.h < LAYOUT_H - 80.0);
         }
     }
 }
