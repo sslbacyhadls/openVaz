@@ -12,6 +12,20 @@ pub enum CarMessage {
     Coolant(i32),
     Errors(Vec<String>),
     Clutch(bool),
+    Family(String),
+    Calibration(String),
+    Reading(String, f32),
+    Motion(String, f32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DriverCommand {
+    Gas(f32),
+    Brake(f32),
+    Clutch(f32),
+    Gear(i32),
+    Ignition(bool),
+    Crank(bool),
 }
 
 pub fn car_path() -> PathBuf {
@@ -58,8 +72,15 @@ impl CarPort {
     }
 
     pub fn send_command(&mut self, channel: &str, value: f32) -> io::Result<()> {
-        let line = format!("выход {channel} значение {value:.2}\n");
-        match self.file.write_all(line.as_bytes()) {
+        self.send_line(&format!("выход {channel} значение {value:.2}"))
+    }
+
+    pub fn send_line(&mut self, line: &str) -> io::Result<()> {
+        let mut text = line.to_string();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        match self.file.write_all(text.as_bytes()) {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),
             other => other,
         }
@@ -114,6 +135,40 @@ pub fn parse_car_line(line: &str) -> Option<CarMessage> {
             "0" => Some(CarMessage::Clutch(false)),
             _ => None,
         },
+        "прошивка" => {
+            let name = parts.collect::<Vec<_>>().join(" ");
+            if name.is_empty() {
+                None
+            } else {
+                Some(CarMessage::Family(name))
+            }
+        }
+        "калибровка" => Some(CarMessage::Calibration(parts.next()?.to_string())),
+        "показание" | "ход" => {
+            let motion = line.starts_with("ход");
+            let key = parts.next()?.to_string();
+            let value = parts.next()?.parse().ok()?;
+            if motion {
+                Some(CarMessage::Motion(key, value))
+            } else {
+                Some(CarMessage::Reading(key, value))
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn parse_driver_line(line: &str) -> Option<DriverCommand> {
+    let rest = line.trim().strip_prefix("водитель ")?;
+    let mut parts = rest.split_whitespace();
+    let value = |token: Option<&str>| token?.parse::<f32>().ok();
+    match parts.next()? {
+        "газ" => Some(DriverCommand::Gas(value(parts.next())?.clamp(0.0, 1.0))),
+        "тормоз" => Some(DriverCommand::Brake(value(parts.next())?.clamp(0.0, 1.0))),
+        "сцепление" => Some(DriverCommand::Clutch(value(parts.next())?.clamp(0.0, 1.0))),
+        "передача" => Some(DriverCommand::Gear(parts.next()?.parse().ok()?)),
+        "зажигание" => Some(DriverCommand::Ignition(parts.next()? != "0")),
+        "стартер" => Some(DriverCommand::Crank(parts.next()? != "0")),
         _ => None,
     }
 }
@@ -150,5 +205,19 @@ mod tests {
         assert_eq!(parse_car_line("муфта 1"), Some(CarMessage::Clutch(true)));
         assert_eq!(parse_car_line("муфта 0"), Some(CarMessage::Clutch(false)));
         assert!(parse_car_line("муфта да").is_none());
+        assert_eq!(
+            parse_car_line("прошивка Январь 7.2"),
+            Some(CarMessage::Family("Январь 7.2".into()))
+        );
+        assert_eq!(
+            parse_car_line("калибровка I201CO58"),
+            Some(CarMessage::Calibration("I201CO58".into()))
+        );
+        assert_eq!(
+            parse_car_line("показание обороты 860"),
+            Some(CarMessage::Reading("обороты".into(), 860.0))
+        );
+        assert_eq!(parse_driver_line("водитель газ 0.5"), Some(DriverCommand::Gas(0.5)));
+        assert_eq!(parse_driver_line("водитель передача -1"), Some(DriverCommand::Gear(-1)));
     }
 }

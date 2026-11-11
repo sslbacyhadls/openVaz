@@ -100,6 +100,74 @@ pub fn lower_buttons() -> [(Hit, Rect); 2] {
     [row[0], row[1]]
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DriveHit {
+    Gas,
+    Brake,
+    Clutch,
+    Gear(i32),
+    Ignition,
+    Starter,
+}
+
+pub fn drive_pedals() -> [(DriveHit, Rect); 3] {
+    let y = 250.0;
+    let h = 460.0;
+    let w = 150.0;
+    [
+        (DriveHit::Clutch, Rect { x: 1288.0, y, w, h }),
+        (DriveHit::Brake, Rect { x: 1462.0, y, w, h }),
+        (DriveHit::Gas, Rect { x: 1636.0, y, w, h }),
+    ]
+}
+
+pub fn drive_gears() -> [(DriveHit, Rect); 7] {
+    let keys = [
+        DriveHit::Gear(1),
+        DriveHit::Gear(2),
+        DriveHit::Gear(3),
+        DriveHit::Gear(4),
+        DriveHit::Gear(5),
+        DriveHit::Gear(0),
+        DriveHit::Gear(-1),
+    ];
+    let mut row = [(DriveHit::Gear(0), Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }); 7];
+    for (index, hit) in keys.into_iter().enumerate() {
+        row[index] = (
+            hit,
+            Rect {
+                x: 80.0 + index as f32 * 112.0,
+                y: 860.0,
+                w: 100.0,
+                h: 72.0,
+            },
+        );
+    }
+    row
+}
+
+pub fn hit_drive(x: f32, y: f32) -> Option<DriveHit> {
+    for (hit, rect) in drive_pedals() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    for (hit, rect) in drive_gears() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    let ignition = Rect { x: 900.0, y: 860.0, w: 160.0, h: 72.0 };
+    let starter = Rect { x: 1080.0, y: 860.0, w: 160.0, h: 72.0 };
+    if ignition.contains(x, y) {
+        return Some(DriveHit::Ignition);
+    }
+    if starter.contains(x, y) {
+        return Some(DriveHit::Starter);
+    }
+    None
+}
+
 pub fn hit_climate(x: f32, y: f32) -> Option<Hit> {
     if slider_hit().contains(x, y) {
         return Some(Hit::Slider);

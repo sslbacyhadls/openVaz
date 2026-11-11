@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -232,6 +233,28 @@ impl Journal {
 pub enum Screen {
     Climate,
     Ecu,
+    Readings,
+    Drive,
+}
+
+impl Screen {
+    pub fn later(self) -> Self {
+        match self {
+            Screen::Climate => Screen::Ecu,
+            Screen::Ecu => Screen::Readings,
+            Screen::Readings => Screen::Drive,
+            Screen::Drive => Screen::Climate,
+        }
+    }
+
+    pub fn earlier(self) -> Self {
+        match self {
+            Screen::Climate => Screen::Drive,
+            Screen::Ecu => Screen::Climate,
+            Screen::Readings => Screen::Ecu,
+            Screen::Drive => Screen::Readings,
+        }
+    }
 }
 
 pub struct Session {
@@ -250,6 +273,14 @@ pub struct EcuView {
     pub errors: Vec<String>,
     pub clutch: Option<bool>,
     pub linked: bool,
+    pub family: String,
+    pub calibration: String,
+    pub readings: HashMap<String, f32>,
+    pub gas: f32,
+    pub brake: f32,
+    pub clutch_pedal: f32,
+    pub gear: i32,
+    pub motor: i32,
     heard: Option<Instant>,
 }
 
@@ -260,6 +291,14 @@ impl Default for EcuView {
             errors: Vec::new(),
             clutch: None,
             linked: false,
+            family: String::new(),
+            calibration: String::new(),
+            readings: HashMap::new(),
+            gas: 0.0,
+            brake: 0.0,
+            clutch_pedal: 0.0,
+            gear: 0,
+            motor: 0,
             heard: None,
         }
     }
@@ -281,8 +320,39 @@ impl EcuView {
                 }
             }
             CarMessage::Clutch(on) => self.clutch.replace(*on) != Some(*on),
+            CarMessage::Family(name) => replace_text(&mut self.family, name),
+            CarMessage::Calibration(name) => replace_text(&mut self.calibration, name),
+            CarMessage::Reading(key, value) => put_quantized(&mut self.readings, key, *value),
+            CarMessage::Motion(key, value) => self.put_motion(key, *value),
         };
         link_changed || data_changed
+    }
+
+    fn put_motion(&mut self, key: &str, value: f32) -> bool {
+        let slot = match key {
+            "газ" => &mut self.gas,
+            "тормоз" => &mut self.brake,
+            "сцепление" => &mut self.clutch_pedal,
+            "передача" => {
+                let gear = value.round() as i32;
+                let changed = self.gear != gear;
+                self.gear = gear;
+                return changed;
+            }
+            "состояние" => {
+                let motor = value.round() as i32;
+                let changed = self.motor != motor;
+                self.motor = motor;
+                return changed;
+            }
+            _ => return false,
+        };
+        if (*slot - value).abs() < 0.03 {
+            false
+        } else {
+            *slot = value;
+            true
+        }
     }
 
     pub fn refresh_link(&mut self) -> bool {
@@ -297,10 +367,34 @@ impl EcuView {
     }
 }
 
+fn replace_text(slot: &mut String, next: &str) -> bool {
+    if slot == next {
+        false
+    } else {
+        *slot = next.to_string();
+        true
+    }
+}
+
+fn put_quantized(map: &mut HashMap<String, f32>, key: &str, value: f32) -> bool {
+    let quantum = match key {
+        "обороты" | "обороты_хх" => 10.0,
+        "скорость" | "рхх" | "педаль" | "дроссель" | "воздух" | "нагрузка" | "продувка" => 1.0,
+        _ => 0.1,
+    };
+    let shown = (value / quantum).round() * quantum;
+    if map.get(key).is_some_and(|old| (old - shown).abs() < quantum * 0.49) {
+        return false;
+    }
+    map.insert(key.to_string(), shown);
+    true
+}
+
 enum Gesture {
     Idle,
     Slider { changed: bool },
     Hold,
+    Pedal { channel: &'static str },
     Swipe { x0: f32, y0: f32, fired: bool },
 }
 
@@ -374,6 +468,19 @@ impl Session {
     }
 
     pub fn pointer_down(&mut self, x: f32, y: f32) {
+        if self.screen == Screen::Drive {
+            if let Some(hit) = crate::layout::hit_drive(x, y) {
+                self.apply_drive(hit);
+                self.gesture = match hit {
+                    crate::layout::DriveHit::Gas => Gesture::Pedal { channel: "газ" },
+                    crate::layout::DriveHit::Brake => Gesture::Pedal { channel: "тормоз" },
+                    crate::layout::DriveHit::Clutch => Gesture::Pedal { channel: "сцепление" },
+                    crate::layout::DriveHit::Starter => Gesture::Pedal { channel: "стартер" },
+                    _ => Gesture::Hold,
+                };
+                return;
+            }
+        }
         if self.screen == Screen::Climate {
             if let Some(hit) = crate::layout::hit_climate(x, y) {
                 self.gesture = match hit {
@@ -413,13 +520,8 @@ impl Session {
                 let dx = x - x0;
                 let dy = y - y0;
                 if dx.abs() >= 72.0 && dx.abs() > dy.abs() * 1.2 {
-                    if dx < 0.0 && self.screen == Screen::Climate {
-                        self.screen = Screen::Ecu;
-                        *fired = true;
-                    } else if dx > 0.0 && self.screen == Screen::Ecu {
-                        self.screen = Screen::Climate;
-                        *fired = true;
-                    }
+                    self.screen = if dx < 0.0 { self.screen.later() } else { self.screen.earlier() };
+                    *fired = true;
                 }
             }
             _ => {}
@@ -427,6 +529,10 @@ impl Session {
     }
 
     pub fn pointer_up(&mut self) {
+        if let Gesture::Pedal { channel } = self.gesture {
+            let line = format!("водитель {channel} 0");
+            self.tell(&line);
+        }
         if let Gesture::Slider { changed: true } = self.gesture {
             let event = OutputEvent {
                 channel: "1",
@@ -522,9 +628,42 @@ impl Session {
                     self.journal
                         .line(&format!("эбу муфта {}", if *on { 1 } else { 0 }));
                 }
+                CarMessage::Family(name) => {
+                    self.journal.line(&format!("эбу прошивка {name}"));
+                }
+                CarMessage::Calibration(name) => {
+                    self.journal.line(&format!("эбу калибровка {name}"));
+                }
+                CarMessage::Reading(_, _) | CarMessage::Motion(_, _) => {}
             }
         }
         changed
+    }
+
+    fn apply_drive(&mut self, hit: crate::layout::DriveHit) {
+        let line = match hit {
+            crate::layout::DriveHit::Gas => "водитель газ 1".to_string(),
+            crate::layout::DriveHit::Brake => "водитель тормоз 1".to_string(),
+            crate::layout::DriveHit::Clutch => "водитель сцепление 1".to_string(),
+            crate::layout::DriveHit::Starter => "водитель стартер 1".to_string(),
+            crate::layout::DriveHit::Gear(code) => format!("водитель передача {code}"),
+            crate::layout::DriveHit::Ignition => {
+                let next = if self.ecu.motor == 0 { 1 } else { 0 };
+                format!("водитель зажигание {next}")
+            }
+        };
+        self.tell(&line);
+    }
+
+    fn tell(&mut self, line: &str) {
+        let mut failed = false;
+        if let Some(car) = &mut self.car {
+            failed = car.send_line(line).is_err();
+        }
+        if failed {
+            self.car = None;
+            self.journal.line("автомобиль отключён");
+        }
     }
 
     fn persist(&mut self) {

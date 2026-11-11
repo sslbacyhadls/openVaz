@@ -5,5 +5,5 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$root"
 export PATH="$HOME/.cargo/bin:$PATH"
 mkdir -p "$root/emu/build"
-cargo build --bin openvaz-car --offline
-exec "$root/target/debug/openvaz-car" "$root/emu/build/car.sock"
+cargo build --release --bin openvaz-car --offline
+exec "$root/target/release/openvaz-car" "$root/emu/build/car.sock" "${1:-B564CD04}"

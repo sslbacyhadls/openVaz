@@ -6,10 +6,12 @@ use std::path::Path;
 use fontdue::{Font, FontSettings};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
 
-use crate::layout::{self, Hit, Rect};
+use crate::firmware::{self, Channel};
+use crate::layout::{self, DriveHit, Hit, Rect};
 use crate::model::{
     celsius_from_unit, Climate, EcuView, Screen, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
 };
+use crate::vehicle::Vehicle;
 
 pub struct Typeface {
     regular: Font,
@@ -78,6 +80,8 @@ pub fn render(screen: Screen, climate: &Climate, ecu: &EcuView, fonts: &mut Type
     match screen {
         Screen::Climate => draw_climate(&mut pixmap, fonts, climate),
         Screen::Ecu => draw_ecu(&mut pixmap, fonts, ecu),
+        Screen::Readings => draw_readings(&mut pixmap, fonts, ecu),
+        Screen::Drive => draw_drive(&mut pixmap, fonts, ecu),
     }
     draw_dots(&mut pixmap, screen);
     pixmap
@@ -166,7 +170,7 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
         };
         button(pixmap, rect, on, active, hit);
     }
-    hint(pixmap, fonts, "Проведите пальцем влево — показания ЭБУ");
+    hint(pixmap, fonts, "Проведите пальцем влево — ЭБУ");
 }
 
 fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
@@ -215,7 +219,187 @@ fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
             );
         }
     }
-    hint(pixmap, fonts, "Проведите пальцем вправо — климат");
+    hint(pixmap, fonts, "Влево — показания, вправо — климат");
+}
+
+fn draw_readings(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
+    text(pixmap, fonts, 48.0, 84.0, 48.0, true, color(0xf4, 0xf1, 0xea), "Показания");
+    if !ecu.linked {
+        card(pixmap, fonts, 48.0, 150.0, "Связь с блоком", "нет связи с ЭБУ", color(0xd4, 0x55, 0x4a));
+        hint(pixmap, fonts, "Влево — движение, вправо — ЭБУ");
+        return;
+    }
+    let firmware = firmware::find(&ecu.calibration);
+    let title = if ecu.calibration.is_empty() {
+        ecu.family.clone()
+    } else {
+        format!("{}  {}", ecu.family, ecu.calibration)
+    };
+    text(pixmap, fonts, 48.0, 132.0, 24.0, false, color(0x9a, 0xa3, 0xad), &title);
+    let channels: Vec<&Channel> = firmware
+        .map(|item| item.channels().collect())
+        .unwrap_or_default();
+    let rows = 9;
+    for (index, channel) in channels.iter().enumerate() {
+        let column = index / rows;
+        let row = index % rows;
+        let x = 48.0 + column as f32 * 900.0;
+        let y = 180.0 + row as f32 * 78.0;
+        let value = ecu
+            .readings
+            .get(channel.key)
+            .map(|number| firmware::format_channel(channel, *number))
+            .unwrap_or_else(|| "нет данных".to_string());
+        let unit = if channel.unit.is_empty() {
+            value
+        } else {
+            format!("{value} {}", channel.unit)
+        };
+        text(pixmap, fonts, x, y + 28.0, 22.0, false, color(0x9a, 0xa3, 0xad), channel.title);
+        text(pixmap, fonts, x + 560.0, y + 28.0, 26.0, true, color(0xf4, 0xf1, 0xea), &unit);
+    }
+    hint(pixmap, fonts, "Влево — движение, вправо — ЭБУ");
+}
+
+fn draw_drive(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
+    text(pixmap, fonts, 48.0, 84.0, 48.0, true, color(0xf4, 0xf1, 0xea), "Движение");
+    if !ecu.linked {
+        card(pixmap, fonts, 48.0, 150.0, "Автомобиль", "нет связи с ЭБУ", color(0xd4, 0x55, 0x4a));
+        hint(pixmap, fonts, "Вправо — показания");
+        return;
+    }
+    let speed = ecu.readings.get("скорость").copied().unwrap_or(0.0);
+    let signed = if ecu.gear < 0 { -speed } else { speed };
+    let rpm = ecu.readings.get("обороты").copied().unwrap_or(0.0);
+    text(
+        pixmap,
+        fonts,
+        80.0,
+        280.0,
+        120.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        &format!("{}", signed.round() as i32),
+    );
+    text(pixmap, fonts, 80.0, 330.0, 28.0, false, color(0x9a, 0xa3, 0xad), "км/ч");
+    let center = (430.0, 560.0);
+    let start = 3.55_f32;
+    let sweep = 2.35_f32;
+    ring_arc(pixmap, center, 168.0, 146.0, start, start + sweep, color(0x2a, 0x33, 0x40));
+    let fraction = (rpm / 7000.0).clamp(0.0, 1.0);
+    if fraction > 0.01 {
+        ring_arc(
+            pixmap,
+            center,
+            168.0,
+            146.0,
+            start,
+            start + sweep * fraction,
+            color(0xe8, 0xa3, 0x17),
+        );
+    }
+    let rpm_label = format!("{}", rpm.round() as i32);
+    let rpm_w = fonts.width(&rpm_label, 36.0, true);
+    text(pixmap, fonts, center.0 - rpm_w * 0.5, center.1 + 12.0, 36.0, true, color(0xf4, 0xf1, 0xea), &rpm_label);
+    text(pixmap, fonts, center.0 - 70.0, center.1 + 48.0, 20.0, false, color(0x9a, 0xa3, 0xad), "об/мин");
+    draw_road(pixmap, speed, ecu.gear < 0);
+    for (hit, rect) in layout::drive_pedals() {
+        let amount = match hit {
+            DriveHit::Gas => ecu.gas,
+            DriveHit::Brake => ecu.brake,
+            DriveHit::Clutch => ecu.clutch_pedal,
+            _ => 0.0,
+        };
+        let ink = match hit {
+            DriveHit::Gas => color(0xe8, 0xa3, 0x17),
+            DriveHit::Brake => color(0xd4, 0x55, 0x4a),
+            _ => color(0xf4, 0xf1, 0xea),
+        };
+        fill_rect(pixmap, rect, 18.0, color(0x1c, 0x24, 0x30));
+        let filled = Rect { x: rect.x, y: rect.y + rect.h * (1.0 - amount), w: rect.w, h: rect.h * amount };
+        if amount > 0.02 {
+            fill_rect(pixmap, filled, 0.0, ink);
+        }
+        let label = match hit {
+            DriveHit::Gas => "газ",
+            DriveHit::Brake => "тормоз",
+            DriveHit::Clutch => "сцепл.",
+            _ => "",
+        };
+        let label_ink = if amount > 0.55 { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) };
+        text(pixmap, fonts, rect.x + 18.0, rect.y + rect.h - 28.0, 20.0, false, label_ink, label);
+    }
+    for (hit, rect) in layout::drive_gears() {
+        let code = match hit {
+            DriveHit::Gear(code) => code,
+            _ => 0,
+        };
+        let on = ecu.gear == code;
+        fill_rect(pixmap, rect, 12.0, if on { color(0xe8, 0xa3, 0x17) } else { color(0x1c, 0x24, 0x30) });
+        let name = match code {
+            -1 => "R",
+            0 => "N",
+            gear => return_gear(gear),
+        };
+        text(
+            pixmap,
+            fonts,
+            rect.x + 36.0,
+            rect.y + 46.0,
+            28.0,
+            true,
+            if on { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) },
+            name,
+        );
+    }
+    let motor = match ecu.motor {
+        1 => "стартер",
+        2 => "мотор работает",
+        3 => "заглох",
+        _ => "зажигание выключено",
+    };
+    text(pixmap, fonts, 900.0, 820.0, 24.0, false, color(0xf4, 0xf1, 0xea), motor);
+    let ignition = layout::Rect { x: 900.0, y: 860.0, w: 160.0, h: 72.0 };
+    let starter = layout::Rect { x: 1080.0, y: 860.0, w: 160.0, h: 72.0 };
+    fill_rect(pixmap, ignition, 12.0, color(0x1c, 0x24, 0x30));
+    fill_rect(pixmap, starter, 12.0, color(0x1c, 0x24, 0x30));
+    text(pixmap, fonts, 924.0, 906.0, 22.0, false, color(0xf4, 0xf1, 0xea), "зажигание");
+    text(pixmap, fonts, 1112.0, 906.0, 22.0, false, color(0xf4, 0xf1, 0xea), "стартер");
+    hint(pixmap, fonts, "Удерживайте педаль. Вправо — показания");
+}
+
+fn return_gear(gear: i32) -> &'static str {
+    match gear {
+        1 => "1",
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        _ => "N",
+    }
+}
+
+fn draw_road(pixmap: &mut Pixmap, speed: f32, reverse: bool) {
+    let road = Rect { x: 80.0, y: 700.0, w: 1100.0, h: 70.0 };
+    fill_rect(pixmap, road, 8.0, color(0x1c, 0x24, 0x30));
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|time| time.as_secs_f32())
+        .unwrap_or(0.0);
+    let direction = if reverse { -1.0 } else { 1.0 };
+    let shift = (seconds * speed.max(0.0) * 28.0 * direction).rem_euclid(90.0);
+    let mut x = road.x + shift;
+    while x < road.x + road.w {
+        if x + 36.0 > road.x {
+            fill_rect(
+                pixmap,
+                Rect { x: x.max(road.x), y: road.y + 30.0, w: 36.0, h: 8.0 },
+                0.0,
+                color(0xe8, 0xa3, 0x17),
+            );
+        }
+        x += 90.0;
+    }
 }
 
 fn card(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, y: f32, title: &str, value: &str, value_color: Color) {
@@ -368,20 +552,16 @@ fn draw_dots(pixmap: &mut Pixmap, screen: Screen) {
     let y = layout::LAYOUT_H - 36.0;
     let active = color(0xf4, 0xf1, 0xea);
     let idle = color(0x3c, 0x46, 0x54);
-    fill_circle(
-        pixmap,
-        layout::LAYOUT_W * 0.5 - 14.0,
-        y,
-        6.0,
-        if screen == Screen::Climate { active } else { idle },
-    );
-    fill_circle(
-        pixmap,
-        layout::LAYOUT_W * 0.5 + 14.0,
-        y,
-        6.0,
-        if screen == Screen::Ecu { active } else { idle },
-    );
+    let order = [Screen::Climate, Screen::Ecu, Screen::Readings, Screen::Drive];
+    for (index, item) in order.iter().enumerate() {
+        fill_circle(
+            pixmap,
+            layout::LAYOUT_W * 0.5 + (index as f32 - 1.5) * 28.0,
+            y,
+            6.0,
+            if screen == *item { active } else { idle },
+        );
+    }
 }
 
 fn text(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, baseline: f32, size: f32, bold: bool, color: Color, label: &str) {
@@ -571,4 +751,298 @@ fn rounded(rect: Rect, radius: f32) -> tiny_skia::Path {
 
 fn color(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba8(r, g, b, 255)
+}
+
+pub const DASH_W: f32 = 1200.0;
+pub const DASH_H: f32 = 760.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DashHit {
+    Gas,
+    Brake,
+    Clutch,
+    Gear(i32),
+    Ignition,
+    Starter,
+}
+
+pub fn render_dashboard(vehicle: &Vehicle, linked: bool, fonts: &mut Typeface) -> Pixmap {
+    let mut pixmap = Pixmap::new(DASH_W as u32, DASH_H as u32).expect("pixmap");
+    pixmap.fill(color(0x12, 0x16, 0x1c));
+    let firmware = vehicle.firmware();
+    text(
+        &mut pixmap,
+        fonts,
+        40.0,
+        58.0,
+        32.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        &format!("{}  {}", firmware.family, firmware.id),
+    );
+    text(
+        &mut pixmap,
+        fonts,
+        40.0,
+        96.0,
+        20.0,
+        false,
+        color(0x9a, 0xa3, 0xad),
+        &format!("мотор {}   {}", firmware.engine, vehicle.motor().label()),
+    );
+    let link = if linked { "панель на связи" } else { "жду панель" };
+    let link_color = if linked { color(0x7d, 0xc6, 0x7a) } else { color(0xd4, 0x55, 0x4a) };
+    text(&mut pixmap, fonts, 900.0, 58.0, 22.0, false, link_color, link);
+
+    let speed = vehicle.speed_kmh().round() as i32;
+    text(
+        &mut pixmap,
+        fonts,
+        48.0,
+        250.0,
+        108.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        &format!("{speed}"),
+    );
+    text(&mut pixmap, fonts, 52.0, 292.0, 24.0, false, color(0x9a, 0xa3, 0xad), "км/ч");
+    let gear = vehicle.driver().gear.label();
+    text(&mut pixmap, fonts, 280.0, 250.0, 64.0, true, color(0xe8, 0xa3, 0x17), gear);
+
+    let center = (230.0, 430.0);
+    let start = 3.55_f32;
+    let sweep = 2.35_f32;
+    ring_arc(&mut pixmap, center, 132.0, 112.0, start, start + sweep, color(0x2a, 0x33, 0x40));
+    let fraction = (vehicle.rpm() / firmware.rev_limit).clamp(0.0, 1.0);
+    if fraction > 0.01 {
+        ring_arc(
+            &mut pixmap,
+            center,
+            132.0,
+            112.0,
+            start,
+            start + sweep * fraction,
+            color(0xe8, 0xa3, 0x17),
+        );
+    }
+    let angle = start + sweep * fraction;
+    thick_line(
+        &mut pixmap,
+        center,
+        (center.0 + angle.cos() * 96.0, center.1 + angle.sin() * 96.0),
+        4.0,
+        color(0xf4, 0xf1, 0xea),
+    );
+    fill_circle(&mut pixmap, center.0, center.1, 8.0, color(0xf4, 0xf1, 0xea));
+    let rpm = format!("{}", vehicle.rpm().round() as i32);
+    let rpm_w = fonts.width(&rpm, 28.0, true);
+    text(
+        &mut pixmap,
+        fonts,
+        center.0 - rpm_w * 0.5,
+        center.1 + 46.0,
+        28.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        &rpm,
+    );
+    text(&mut pixmap, fonts, center.0 - 36.0, center.1 + 74.0, 16.0, false, color(0x9a, 0xa3, 0xad), "об/мин");
+    dash_road(&mut pixmap, vehicle.channel("скорость"), vehicle.speed_kmh() < 0.0);
+
+    let mut rows = vec![
+        ("Жидкость".to_string(), format!("{} °C", vehicle.coolant().round() as i32)),
+        ("Дроссель".to_string(), format!("{:.0} %", vehicle.channel("дроссель"))),
+        ("Впрыск".to_string(), format!("{:.2} мс", vehicle.channel("впрыск"))),
+        ("Расход воздуха".to_string(), format!("{:.1} кг/ч", vehicle.channel("дмрв"))),
+        ("Кислород".to_string(), format!("{:.2} В", vehicle.channel("кислород"))),
+    ];
+    if firmware.has_channel("педаль") {
+        rows.insert(1, ("Педаль".to_string(), format!("{:.0} %", vehicle.channel("педаль"))));
+    }
+    if firmware.has_channel("кислород2") {
+        rows.push(("Кислород 2".to_string(), format!("{:.2} В", vehicle.channel("кислород2"))));
+    }
+    rows.push(("Коррекция".to_string(), format!("{:.2}", vehicle.channel("коррекция"))));
+    rows.push(("Напряжение".to_string(), format!("{:.1} В", vehicle.channel("напряжение"))));
+    rows.push(("Ошибки".to_string(), vehicle.error().unwrap_or("нет").to_string()));
+    for (index, (title, value)) in rows.iter().enumerate() {
+        let y = 150.0 + index as f32 * 50.0;
+        text(&mut pixmap, fonts, 520.0, y, 18.0, false, color(0x9a, 0xa3, 0xad), title);
+        let ink = if *title == "Ошибки" && value != "нет" {
+            color(0xd4, 0x55, 0x4a)
+        } else {
+            color(0xf4, 0xf1, 0xea)
+        };
+        text(&mut pixmap, fonts, 520.0, y + 28.0, 24.0, true, ink, value);
+    }
+
+    let driver = vehicle.driver();
+    for (hit, rect) in dash_pedals() {
+        let amount = match hit {
+            DashHit::Gas => driver.gas,
+            DashHit::Brake => driver.brake,
+            DashHit::Clutch => driver.clutch,
+            _ => 0.0,
+        };
+        let ink = match hit {
+            DashHit::Gas => color(0xe8, 0xa3, 0x17),
+            DashHit::Brake => color(0xd4, 0x55, 0x4a),
+            _ => color(0xc5, 0xcc, 0xd4),
+        };
+        fill_rect(&mut pixmap, rect, 16.0, color(0x1c, 0x24, 0x30));
+        if amount > 0.02 {
+            fill_rect(
+                &mut pixmap,
+                Rect { x: rect.x, y: rect.y + rect.h * (1.0 - amount), w: rect.w, h: rect.h * amount },
+                0.0,
+                ink,
+            );
+        }
+        let label = match hit {
+            DashHit::Gas => "газ",
+            DashHit::Brake => "тормоз",
+            DashHit::Clutch => "сцепл.",
+            _ => "",
+        };
+        let label_ink = if amount > 0.55 { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) };
+        text(&mut pixmap, fonts, rect.x + 10.0, rect.y + rect.h - 22.0, 16.0, false, label_ink, label);
+    }
+
+    for (hit, rect) in dash_gears() {
+        let code = match hit {
+            DashHit::Gear(code) => code,
+            _ => 0,
+        };
+        let on = driver.gear.code() == code;
+        fill_rect(
+            &mut pixmap,
+            rect,
+            10.0,
+            if on { color(0xe8, 0xa3, 0x17) } else { color(0x1c, 0x24, 0x30) },
+        );
+        let name = match code {
+            -1 => "R",
+            0 => "N",
+            1 => "1",
+            2 => "2",
+            3 => "3",
+            4 => "4",
+            _ => "5",
+        };
+        text(
+            &mut pixmap,
+            fonts,
+            rect.x + 26.0,
+            rect.y + 40.0,
+            24.0,
+            true,
+            if on { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) },
+            name,
+        );
+    }
+    let ignition_on = !matches!(vehicle.motor(), crate::engine::Motor::Off);
+    button_caption(
+        &mut pixmap,
+        fonts,
+        Rect { x: 760.0, y: 668.0, w: 180.0, h: 64.0 },
+        "зажигание",
+        ignition_on,
+    );
+    button_caption(
+        &mut pixmap,
+        fonts,
+        Rect { x: 960.0, y: 668.0, w: 180.0, h: 64.0 },
+        "стартер",
+        driver.crank,
+    );
+    pixmap
+}
+
+pub fn hit_dashboard(x: f32, y: f32) -> Option<DashHit> {
+    for (hit, rect) in dash_pedals() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    for (hit, rect) in dash_gears() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    if (Rect { x: 760.0, y: 668.0, w: 180.0, h: 64.0 }).contains(x, y) {
+        return Some(DashHit::Ignition);
+    }
+    if (Rect { x: 960.0, y: 668.0, w: 180.0, h: 64.0 }).contains(x, y) {
+        return Some(DashHit::Starter);
+    }
+    None
+}
+
+fn dash_pedals() -> [(DashHit, Rect); 3] {
+    let y = 140.0;
+    let h = 500.0;
+    let w = 84.0;
+    [
+        (DashHit::Clutch, Rect { x: 900.0, y, w, h }),
+        (DashHit::Brake, Rect { x: 1000.0, y, w, h }),
+        (DashHit::Gas, Rect { x: 1100.0, y, w, h }),
+    ]
+}
+
+fn dash_gears() -> [(DashHit, Rect); 7] {
+    let keys = [
+        DashHit::Gear(1),
+        DashHit::Gear(2),
+        DashHit::Gear(3),
+        DashHit::Gear(4),
+        DashHit::Gear(5),
+        DashHit::Gear(0),
+        DashHit::Gear(-1),
+    ];
+    let mut row = [(DashHit::Gear(0), Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }); 7];
+    for (index, hit) in keys.into_iter().enumerate() {
+        row[index] = (
+            hit,
+            Rect { x: 40.0 + index as f32 * 84.0, y: 668.0, w: 72.0, h: 64.0 },
+        );
+    }
+    row
+}
+
+fn button_caption(pixmap: &mut Pixmap, fonts: &mut Typeface, rect: Rect, label: &str, on: bool) {
+    fill_rect(
+        pixmap,
+        rect,
+        12.0,
+        if on { color(0xe8, 0xa3, 0x17) } else { color(0x1c, 0x24, 0x30) },
+    );
+    text(
+        pixmap,
+        fonts,
+        rect.x + 18.0,
+        rect.y + 40.0,
+        22.0,
+        false,
+        if on { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) },
+        label,
+    );
+}
+
+fn dash_road(pixmap: &mut Pixmap, speed: f32, reverse: bool) {
+    let road = Rect { x: 40.0, y: 575.0, w: 460.0, h: 48.0 };
+    fill_rect(pixmap, road, 8.0, color(0x1c, 0x24, 0x30));
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|time| time.as_secs_f32())
+        .unwrap_or(0.0);
+    let direction = if reverse { -1.0 } else { 1.0 };
+    let shift = (seconds * speed.max(0.0) * 24.0 * direction).rem_euclid(70.0);
+    let mut x = road.x - 70.0 + shift;
+    while x < road.x + road.w {
+        let mark = Rect { x, y: road.y + 20.0, w: 28.0, h: 6.0 };
+        if mark.x + mark.w > road.x && mark.x < road.x + road.w {
+            fill_rect(pixmap, mark, 0.0, color(0xe8, 0xa3, 0x17));
+        }
+        x += 70.0;
+    }
 }
