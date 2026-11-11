@@ -197,27 +197,12 @@ fn push_unit(body: &mut String, key: &str, value: f32) {
     body.push('\n');
 }
 
-pub struct Journal {
-    file: Option<File>,
-}
+pub struct Journal;
 
 impl Journal {
-    pub fn open(dir: Option<&Path>) -> Self {
-        let file = dir.and_then(|dir| {
-            fs::create_dir_all(dir).ok()?;
-            let path = dir.join("journal.log");
-            File::options().create(true).append(true).open(path).ok()
-        });
-        Self { file }
-    }
-
     pub fn line(&mut self, text: &str) {
         println!("{text}");
         let _ = std::io::stdout().flush();
-        if let Some(file) = &mut self.file {
-            let _ = writeln!(file, "{text}");
-            let _ = file.flush();
-        }
     }
 
     pub fn output(&mut self, event: &OutputEvent) {
@@ -312,7 +297,7 @@ impl Session {
             .map(Climate::load)
             .unwrap_or_default();
         climate.air_conditioner = false;
-        let mut journal = Journal::open(state_dir.as_deref());
+        let mut journal = Journal;
         journal.line(&format!("старт профиль={PROFILE_ID}"));
         journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
         for event in climate.boot_events() {
@@ -584,6 +569,25 @@ mod tests {
         assert!((loaded.fan - MIN_FAN).abs() < 0.001);
         assert!(!loaded.air_conditioner);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_keeps_only_settings_in_the_state_directory() {
+        let dir = std::env::temp_dir().join(format!("openvaz-journal-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        {
+            let mut session = Session::boot(Some(dir.clone()));
+            for _ in 0..1000 {
+                session.apply_hit(crate::layout::Hit::Face);
+                session.note_car(CarMessage::Coolant(90));
+            }
+        }
+        let entries: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("settings")]);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
