@@ -38,7 +38,7 @@ emu/car.sh
 | [questions.md](docs/questions.md) | Уточняющие вопросы и ответы: плата, машина, заслонки, ЭБУ, экран |
 | [module.md](docs/module.md) | Железо: схема соединений, каналы, поведение, список деталей |
 | [emulation.md](docs/emulation.md) | Как собрать образ и запустить панель в QEMU |
-| [plan-january.md](docs/plan-january.md) | Следующий этап: прошивки Январь, экран показаний, модель двигателя |
+| [plan-january.md](docs/plan-january.md) | Следующий этап: прошивки Итэлма M74 и Январь 7.2, экран показаний, модель двигателя |
 | [tasks/](docs/tasks/README.md) | Нарезанные задачи |
 
 ## Устройство кода
