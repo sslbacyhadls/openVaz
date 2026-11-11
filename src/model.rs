@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::hardware::Board;
 use crate::link::{CarMessage, CarPort, LINK_TIMEOUT};
 
 pub const PROFILE_ID: &str = "kalina";
@@ -245,6 +246,7 @@ pub struct Session {
     gesture: Gesture,
     car: Option<CarPort>,
     last_repeat: Instant,
+    outputs: Outputs,
 }
 
 pub struct EcuView {
@@ -317,9 +319,11 @@ impl Session {
         let mut journal = Journal;
         journal.line(&format!("старт профиль={PROFILE_ID}"));
         journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
-        for event in climate.boot_events() {
-            journal.output(&event);
+        let events = climate.boot_events();
+        for event in &events {
+            journal.output(event);
         }
+        let outputs = open_outputs(state_dir.as_deref(), &events, &mut journal);
         Self {
             climate,
             screen: Screen::Climate,
@@ -329,6 +333,7 @@ impl Session {
             gesture: Gesture::Idle,
             car: None,
             last_repeat: Instant::now(),
+            outputs,
         }
     }
 
@@ -481,6 +486,9 @@ impl Session {
     }
 
     fn repeat_commands(&mut self) {
+        if !matches!(self.outputs, Outputs::Text) {
+            return;
+        }
         let events = self.climate.boot_events();
         let mut failed = false;
         if let Some(car) = &mut self.car {
@@ -499,13 +507,22 @@ impl Session {
 
     fn publish(&mut self, event: &OutputEvent) {
         self.journal.output(event);
-        let mut failed = false;
-        if let Some(car) = &mut self.car {
-            failed = car.send_command(event.channel, event.value).is_err();
-        }
-        if failed {
-            self.car = None;
-            self.journal.line("автомобиль отключён");
+        match &mut self.outputs {
+            Outputs::Text => {
+                let mut failed = false;
+                if let Some(car) = &mut self.car {
+                    failed = car.send_command(event.channel, event.value).is_err();
+                }
+                if failed {
+                    self.car = None;
+                    self.journal.line("автомобиль отключён");
+                }
+            }
+            Outputs::Board(board) => {
+                if let Err(error) = board.command(event) {
+                    self.journal.line(&format!("выход не применён: {error}"));
+                }
+            }
         }
     }
 
@@ -538,6 +555,30 @@ impl Session {
                 self.journal
                     .line(&format!("настройки не записаны: {error}"));
             }
+        }
+    }
+}
+
+enum Outputs {
+    Text,
+    Board(Board),
+}
+
+fn open_outputs(state_dir: Option<&Path>, events: &[OutputEvent], journal: &mut Journal) -> Outputs {
+    if std::env::var("OPENVAS_OUTPUT").as_deref() != Ok("hardware") {
+        return Outputs::Text;
+    }
+    match Board::open(state_dir) {
+        Ok(mut board) => {
+            if let Err(error) = board.command_all(events) {
+                journal.line(&format!("выходы: {error}"));
+            }
+            Outputs::Board(board)
+        }
+        Err(error) => {
+            journal.line(&format!("выходы не открыты: {error}"));
+            journal.line("импульсы запрещены, панель остаётся на текстовом порту");
+            Outputs::Text
         }
     }
 }

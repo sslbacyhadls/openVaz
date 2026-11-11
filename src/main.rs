@@ -15,6 +15,8 @@ fn main() {
             "--screen" => screen = args.next(),
             "--help" => {
                 println!("openvaz [--fb /dev/fb0] [--dump-ppm кадр.ppm] [--screen climate|ecu]");
+                println!("OPENVAS_OUTPUT=hardware включает PCA9685, пин 7 и ШИМ пина 8.");
+                println!("Калибровка заслонок: файл servos в каталоге настроек.");
                 return;
             }
             other => {

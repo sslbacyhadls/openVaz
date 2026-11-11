@@ -1,4 +1,5 @@
 pub mod fb;
+pub mod hardware;
 pub mod layout;
 pub mod link;
 pub mod model;
