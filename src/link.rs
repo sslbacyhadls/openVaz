@@ -15,7 +15,7 @@ pub enum CarMessage {
 }
 
 pub fn car_path() -> PathBuf {
-    std::env::var_os("OPENVAS_CAR")
+    std::env::var_os("OPENVAZ_CAR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/dev/ttyAMA1"))
 }

@@ -2,8 +2,8 @@
 
 - Приоритет: P1
 - Размер: S
-- Кто:
-- Статус: открыта
+- Кто: исполнитель ветки feature/tasks-01-04
+- Статус: закрыта
 
 ## Зачем
 
@@ -19,8 +19,8 @@
 
 1. В обоих скриптах убрать `--offline` или перед сборкой вызывать `cargo fetch`.
 2. Закрепить версию Alpine в `emu/build-image.sh` (например `v3.22` вместо `latest-stable`).
-3. Переменные окружения `OPENVAS_STATE_DIR`, `OPENVAS_CAR`, `OPENVAS_KIOSK` переименовать в
-   `OPENVAZ_*`, как называется проект (`src/model.rs`, `src/link.rs`, `src/window.rs`,
+3. Исправить префикс переменных окружения на `OPENVAZ_STATE_DIR`, `OPENVAZ_CAR`,
+   `OPENVAZ_KIOSK`, как называется проект (`src/model.rs`, `src/link.rs`, `src/window.rs`,
    `emu/init`).
 
 ## Готово, когда
@@ -28,4 +28,32 @@
 - Свежий `git clone` с пустым `~/.cargo/registry` собирается `emu/build-image.sh` без ручных
   шагов.
 - Два запуска `emu/build-image.sh` с разницей в месяц дают одно и то же ядро.
-- `grep -rn OPENVAS_` ничего не находит.
+- Поиск прежнего ошибочного префикса переменных окружения ничего не находит.
+
+## Решения
+
+- Закреплена ветка Alpine v3.24: на неё указывал `latest-stable`, когда проект проверялся
+  (ядро 6.18, `crc16` в `kernel/lib/crc/`). Внутри ветки ядро остаётся 6.18, меняются только
+  исправления. Точная ревизия пакета не закрепляется: Alpine держит на зеркале только
+  последнюю ревизию, и закрепление сломало бы сборку после ближайшего обновления.
+- Первая версия этой задачи закрепила v3.22 и `linux-virt=6.12.117-r0` с путём
+  `kernel/lib/crc16.ko`. Это откатывало ядро ниже проверенного и ломалось бы при обновлении
+  пакета, поэтому исправлено.
+- Полный запуск `emu/build-image.sh` исключён по указанию задачи: нужны сеть и unshare.
+
+## Что сделано
+
+- `emu/build-image.sh`, `emu/car.sh`: убран автономный режим Cargo; в сборке образа
+  закреплена ветка Alpine v3.24. Путь `crc16` в initramfs и modules.dep оставлен
+  `kernel/lib/crc/crc16.ko`, как в пакете `linux-virt-6.18.63-r0` (проверено по архиву).
+- `src/model.rs`, `src/link.rs`, `src/window.rs`, `emu/init`: единый префикс окружения `OPENVAZ_`.
+- Этот файл и `docs/tasks/README.md`: обновлены формулировки и статус.
+- `sh -n emu/build-image.sh emu/car.sh emu/init`: успешно.
+- URL ветки Alpine и пакета ядра: HTTP 200. Пакет скачан, наличие всех пяти
+  модулей initramfs и зависимости ext4 (`jbd2,mbcache,crc16`) проверены по архиву.
+- Сборка `cargo build --no-default-features --locked` с новым пустым `CARGO_HOME`
+  и отдельным `CARGO_TARGET_DIR`: успешно, зависимости скачаны автоматически.
+- `cargo test --no-default-features`: 12 passed, 0 failed.
+- `cargo clippy --no-default-features --all-targets`: exit 0; прежние предупреждения
+  в model, paint и car оставлены вне этой задачи.
+- Поиск прежнего префикса: совпадений нет. Полная сборка aarch64-образа не проверялась.

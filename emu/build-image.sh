@@ -8,7 +8,7 @@ cd "$root"
 cache=$root/emu/cache
 build=$root/emu/build
 rootfs=$build/rootfs
-mirror=https://dl-cdn.alpinelinux.org/alpine/latest-stable
+mirror=https://dl-cdn.alpinelinux.org/alpine/v3.24
 
 mkdir -p "$cache" "$build"
 rm -rf "$rootfs"
@@ -17,7 +17,7 @@ mkdir -p "$rootfs"
 export PATH="${HOME}/.cargo/bin:${PATH}"
 sysroot=$(rustc --print sysroot)
 export PATH="${sysroot}/lib/rustlib/x86_64-unknown-linux-gnu/bin:${PATH}"
-cargo build --release --target aarch64-unknown-linux-musl --no-default-features --offline --manifest-path "$root/Cargo.toml"
+cargo build --release --target aarch64-unknown-linux-musl --no-default-features --manifest-path "$root/Cargo.toml"
 
 fetch() {
     python3 - "$1" "$2" <<'PY'

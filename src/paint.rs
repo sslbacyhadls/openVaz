@@ -8,7 +8,7 @@ use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
 
 use crate::layout::{self, Hit, Rect};
 use crate::model::{
-    celsius_from_unit, Climate, EcuView, Screen, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
+    celsius_from_unit, Climate, EcuView, Screen, MIN_FAN, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
 };
 
 pub struct Typeface {
@@ -94,13 +94,13 @@ pub fn write_ppm(path: &Path, pixmap: &Pixmap) -> io::Result<()> {
 }
 
 fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
-    text(pixmap, fonts, 48.0, 84.0, 48.0, true, color(0xf4, 0xf1, 0xea), "Климат");
+    text(pixmap, fonts, 24.0, 64.0, 36.0, true, color(0xf4, 0xf1, 0xea), "Климат");
     let profile_w = fonts.width(PROFILE_TITLE, 24.0, false);
     text(
         pixmap,
         fonts,
-        layout::LAYOUT_W - 48.0 - profile_w,
-        78.0,
+        layout::LAYOUT_W - 24.0 - profile_w,
+        58.0,
         24.0,
         false,
         color(0x9a, 0xa3, 0xad),
@@ -110,7 +110,7 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
     let track = layout::slider_track();
     let cold = format!("{TEMP_MIN_C}°");
     let hot = format!("{TEMP_MAX_C}°");
-    text(pixmap, fonts, 48.0, track.y + 16.0, 24.0, false, color(0x7e, 0xb6, 0xd9), &cold);
+    text(pixmap, fonts, 24.0, track.y + 16.0, 24.0, false, color(0x7e, 0xb6, 0xd9), &cold);
     text(
         pixmap,
         fonts,
@@ -166,11 +166,26 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
         };
         button(pixmap, rect, on, active, hit);
     }
+    text(pixmap, fonts, 472.0, 324.0, 26.0, false, color(0x9a, 0xa3, 0xad), "Вентилятор");
+    for (hit, rect) in layout::fan_buttons() {
+        let Hit::Fan(speed) = hit else { continue };
+        let on = (climate.fan - speed as f32 * MIN_FAN).abs() < 0.001;
+        let (fill, ink) = if on {
+            (color(0xe8, 0xa3, 0x17), color(0x12, 0x16, 0x1c))
+        } else {
+            (color(0x1c, 0x24, 0x30), color(0xf4, 0xf1, 0xea))
+        };
+        fill_rect(pixmap, rect, 16.0, fill);
+        let label = if speed == 0 { "Выкл".to_string() } else { speed.to_string() };
+        let size = if speed == 0 { 24.0 } else { 32.0 };
+        let width = fonts.width(&label, size, true);
+        text(pixmap, fonts, rect.x + (rect.w - width) * 0.5, rect.y + 60.0, size, true, ink, &label);
+    }
     hint(pixmap, fonts, "Проведите пальцем влево — показания ЭБУ");
 }
 
 fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
-    text(pixmap, fonts, 48.0, 84.0, 48.0, true, color(0xf4, 0xf1, 0xea), "ЭБУ");
+    text(pixmap, fonts, 24.0, 64.0, 36.0, true, color(0xf4, 0xf1, 0xea), "ЭБУ");
     let (coolant, coolant_color) = match ecu.coolant_c {
         Some(degrees) if ecu.linked && degrees >= 105 => (
             format!("{degrees} °C"),
@@ -189,13 +204,13 @@ fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
     card(
         pixmap,
         fonts,
-        48.0,
-        150.0,
+        24.0,
+        112.0,
         "Температура охлаждающей жидкости",
         &coolant,
         coolant_color,
     );
-    card(pixmap, fonts, 48.0, 372.0, "Коды ошибок", &errors, error_color);
+    card(pixmap, fonts, 24.0, 284.0, "Коды ошибок", &errors, error_color);
     if ecu.linked {
         let clutch = match ecu.clutch {
             Some(true) => "Муфта кондиционера включена",
@@ -206,8 +221,8 @@ fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
             text(
                 pixmap,
                 fonts,
-                48.0,
-                620.0,
+                24.0,
+                482.0,
                 28.0,
                 false,
                 color(0xf4, 0xf1, 0xea),
@@ -222,19 +237,19 @@ fn card(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, y: f32, title: &str, 
     let rect = Rect {
         x,
         y,
-        w: 1040.0,
-        h: 190.0,
+        w: layout::LAYOUT_W - 48.0,
+        h: 144.0,
     };
     fill_rect(pixmap, rect, 18.0, color(0x1c, 0x24, 0x30));
-    text(pixmap, fonts, x + 32.0, y + 64.0, 26.0, false, color(0x9a, 0xa3, 0xad), title);
-    text(pixmap, fonts, x + 32.0, y + 136.0, 42.0, true, value_color, value);
+    text(pixmap, fonts, x + 24.0, y + 44.0, 26.0, false, color(0x9a, 0xa3, 0xad), title);
+    text(pixmap, fonts, x + 24.0, y + 108.0, 36.0, true, value_color, value);
 }
 
 fn button(pixmap: &mut Pixmap, rect: Rect, on: bool, active: Color, hit: Hit) {
     let fill = if on { active } else { color(0x1c, 0x24, 0x30) };
     let ink = if on { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) };
     fill_rect(pixmap, rect, 22.0, fill);
-    let size = 78.0;
+    let size = 62.0;
     let origin = (rect.x + (rect.w - size) * 0.5, rect.y + (rect.h - size) * 0.5);
     match hit {
         Hit::Face => icon_face(pixmap, origin, size, ink),
@@ -242,7 +257,7 @@ fn button(pixmap: &mut Pixmap, rect: Rect, on: bool, active: Color, hit: Hit) {
         Hit::Glass => icon_glass(pixmap, origin, size, ink),
         Hit::Recirc => icon_recirc(pixmap, origin, size, ink),
         Hit::Ac => icon_snowflake(pixmap, origin, size, ink),
-        Hit::Slider => {}
+        Hit::Slider | Hit::Fan(_) => {}
     }
 }
 
@@ -356,7 +371,7 @@ fn hint(pixmap: &mut Pixmap, fonts: &mut Typeface, label: &str) {
         pixmap,
         fonts,
         (layout::LAYOUT_W - width) * 0.5,
-        layout::LAYOUT_H - 78.0,
+        layout::LAYOUT_H - 52.0,
         size,
         false,
         color(0x9a, 0xa3, 0xad),
@@ -365,7 +380,7 @@ fn hint(pixmap: &mut Pixmap, fonts: &mut Typeface, label: &str) {
 }
 
 fn draw_dots(pixmap: &mut Pixmap, screen: Screen) {
-    let y = layout::LAYOUT_H - 36.0;
+    let y = layout::LAYOUT_H - 20.0;
     let active = color(0xf4, 0xf1, 0xea);
     let idle = color(0x3c, 0x46, 0x54);
     fill_circle(

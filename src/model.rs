@@ -98,6 +98,21 @@ impl Climate {
         Some(event("1", self.temperature))
     }
 
+    /// Выключено и четыре фиксированные скорости; ноль снимает запрос кондиционера.
+    pub fn set_fan(&mut self, speed: u8) -> Vec<OutputEvent> {
+        let value = speed.min(4) as f32 * MIN_FAN;
+        let mut events = Vec::new();
+        if self.fan != value {
+            self.fan = value;
+            events.push(event("вентилятор", value));
+        }
+        if value == 0.0 && self.air_conditioner {
+            self.air_conditioner = false;
+            events.push(event("кондиционер", 0.0));
+        }
+        events
+    }
+
     /// Запрос уходит в ЭБУ только при уже включённом вентиляторе.
     /// Если вентилятор выключен, сначала включается его нижняя скорость.
     pub fn toggle_air_conditioner(&mut self) -> Vec<OutputEvent> {
@@ -130,7 +145,9 @@ impl Climate {
                 "face" => climate.face = parse_bool(value),
                 "feet" => climate.feet = parse_bool(value),
                 "glass" => climate.glass = parse_bool(value),
-                "fan" => climate.fan = parse_unit(value),
+                "fan" => {
+                    climate.set_fan((parse_unit(value) / MIN_FAN).round() as u8);
+                }
                 // Кондиционер после каждой загрузки выключен, даже если строка осталась в файле.
                 "air_conditioner" => {}
                 _ => {}
@@ -197,27 +214,12 @@ fn push_unit(body: &mut String, key: &str, value: f32) {
     body.push('\n');
 }
 
-pub struct Journal {
-    file: Option<File>,
-}
+pub struct Journal;
 
 impl Journal {
-    pub fn open(dir: Option<&Path>) -> Self {
-        let file = dir.and_then(|dir| {
-            fs::create_dir_all(dir).ok()?;
-            let path = dir.join("journal.log");
-            File::options().create(true).append(true).open(path).ok()
-        });
-        Self { file }
-    }
-
     pub fn line(&mut self, text: &str) {
         println!("{text}");
         let _ = std::io::stdout().flush();
-        if let Some(file) = &mut self.file {
-            let _ = writeln!(file, "{text}");
-            let _ = file.flush();
-        }
     }
 
     pub fn output(&mut self, event: &OutputEvent) {
@@ -312,7 +314,7 @@ impl Session {
             .map(Climate::load)
             .unwrap_or_default();
         climate.air_conditioner = false;
-        let mut journal = Journal::open(state_dir.as_deref());
+        let mut journal = Journal;
         journal.line(&format!("старт профиль={PROFILE_ID}"));
         journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
         for event in climate.boot_events() {
@@ -455,12 +457,15 @@ impl Session {
             crate::layout::Hit::Glass => vec![self.climate.toggle_glass()],
             crate::layout::Hit::Recirc => vec![self.climate.toggle_recirculation()],
             crate::layout::Hit::Ac => self.climate.toggle_air_conditioner(),
+            crate::layout::Hit::Fan(speed) => self.climate.set_fan(speed),
             crate::layout::Hit::Slider => return,
         };
-        for event in &events {
-            self.publish(event);
+        if !events.is_empty() {
+            for event in &events {
+                self.publish(event);
+            }
+            self.persist();
         }
-        self.persist();
     }
 
     fn attach_car(&mut self) {
@@ -539,7 +544,7 @@ impl Session {
 
 pub fn writable_state_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(dir) = std::env::var_os("OPENVAS_STATE_DIR") {
+    if let Some(dir) = std::env::var_os("OPENVAZ_STATE_DIR") {
         candidates.push(PathBuf::from(dir));
     }
     candidates.push(PathBuf::from("/var/lib/openvaz"));
@@ -584,6 +589,57 @@ mod tests {
         assert!((loaded.fan - MIN_FAN).abs() < 0.001);
         assert!(!loaded.air_conditioner);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_keeps_only_settings_in_the_state_directory() {
+        let dir = std::env::temp_dir().join(format!("openvaz-journal-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        {
+            let mut session = Session::boot(Some(dir.clone()));
+            for _ in 0..1000 {
+                session.apply_hit(crate::layout::Hit::Face);
+                session.note_car(CarMessage::Coolant(90));
+            }
+        }
+        let entries: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("settings")]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn stopping_the_fan_also_turns_off_the_air_conditioner() {
+        let mut climate = Climate::default();
+        climate.toggle_air_conditioner();
+        assert_eq!(
+            climate.set_fan(0),
+            vec![event("вентилятор", 0.0), event("кондиционер", 0.0)]
+        );
+        assert!(!climate.air_conditioner);
+        assert_eq!(climate.fan, 0.0);
+        assert!(climate.set_fan(0).is_empty());
+        assert_eq!(climate.set_fan(255), vec![event("вентилятор", 1.0)]);
+    }
+
+    #[test]
+    fn fan_buttons_persist_all_five_speeds() {
+        let dir = std::env::temp_dir().join(format!("openvaz-fan-{}", std::process::id()));
+        let mut session = Session::boot(Some(dir.clone()));
+        session.apply_hit(crate::layout::Hit::Ac);
+        for (index, (_, rect)) in crate::layout::fan_buttons().into_iter().enumerate() {
+            session.pointer_down(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+            session.pointer_up();
+            let expected = index as f32 * MIN_FAN;
+            assert_eq!(session.climate.fan, expected);
+            assert!(!session.climate.air_conditioner);
+            assert_eq!(Session::boot(Some(dir.clone())).climate.fan, expected);
+        }
+        fs::write(dir.join("settings"), "fan=0.61\n").unwrap();
+        assert_eq!(Climate::load(&dir.join("settings")).fan, 0.5);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

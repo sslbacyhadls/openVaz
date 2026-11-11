@@ -1,5 +1,5 @@
-pub const LAYOUT_W: f32 = 1920.0;
-pub const LAYOUT_H: f32 = 1080.0;
+pub const LAYOUT_W: f32 = 1024.0;
+pub const LAYOUT_H: f32 = 600.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
@@ -23,6 +23,7 @@ pub enum Hit {
     Recirc,
     Ac,
     Slider,
+    Fan(u8),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -51,8 +52,8 @@ impl Viewport {
 
 pub fn slider_track() -> Rect {
     Rect {
-        x: 196.0,
-        y: 188.0,
+        x: 100.0,
+        y: 156.0,
         w: 720.0,
         h: 14.0,
     }
@@ -60,16 +61,16 @@ pub fn slider_track() -> Rect {
 
 pub fn slider_hit() -> Rect {
     Rect {
-        x: 160.0,
-        y: 140.0,
+        x: 64.0,
+        y: 116.0,
         w: 792.0,
-        h: 110.0,
+        h: 94.0,
     }
 }
 
-const BUTTON: f32 = 164.0;
-const BUTTON_GAP: f32 = 16.0;
-const BUTTON_X: f32 = 48.0;
+const BUTTON: f32 = 112.0;
+const BUTTON_GAP: f32 = 12.0;
+const BUTTON_X: f32 = 24.0;
 
 fn button_row(y: f32, hits: &[Hit]) -> Vec<(Hit, Rect)> {
     hits.iter()
@@ -89,22 +90,40 @@ fn button_row(y: f32, hits: &[Hit]) -> Vec<(Hit, Rect)> {
 }
 
 pub fn mode_buttons() -> [(Hit, Rect); 3] {
-    let y = LAYOUT_H - 112.0 - BUTTON - BUTTON_GAP - BUTTON;
+    let y = LAYOUT_H - 100.0 - BUTTON - BUTTON_GAP - BUTTON;
     let row = button_row(y, &[Hit::Face, Hit::Feet, Hit::Glass]);
     [row[0], row[1], row[2]]
 }
 
 pub fn lower_buttons() -> [(Hit, Rect); 2] {
-    let y = LAYOUT_H - 112.0 - BUTTON;
+    let y = LAYOUT_H - 100.0 - BUTTON;
     let row = button_row(y, &[Hit::Recirc, Hit::Ac]);
     [row[0], row[1]]
+}
+
+pub fn fan_buttons() -> [(Hit, Rect); 5] {
+    std::array::from_fn(|index| {
+        (
+            Hit::Fan(index as u8),
+            Rect {
+                x: 472.0 + index as f32 * 106.0,
+                y: 360.0,
+                w: 96.0,
+                h: 100.0,
+            },
+        )
+    })
 }
 
 pub fn hit_climate(x: f32, y: f32) -> Option<Hit> {
     if slider_hit().contains(x, y) {
         return Some(Hit::Slider);
     }
-    for (hit, rect) in mode_buttons().into_iter().chain(lower_buttons()) {
+    for (hit, rect) in mode_buttons()
+        .into_iter()
+        .chain(lower_buttons())
+        .chain(fan_buttons())
+    {
         if rect.contains(x, y) {
             return Some(hit);
         }
@@ -119,6 +138,8 @@ mod tests {
     #[test]
     fn viewport_maps_the_center() {
         let view = Viewport::fit(LAYOUT_W as u32, LAYOUT_H as u32);
+        assert_eq!(view.scale, 1.0);
+        assert_eq!((view.ox, view.oy), (0.0, 0.0));
         let (x, y) = view.to_layout(LAYOUT_W * 0.5, LAYOUT_H * 0.5);
         assert!((x - LAYOUT_W * 0.5).abs() < 0.01);
         assert!((y - LAYOUT_H * 0.5).abs() < 0.01);
@@ -132,9 +153,30 @@ mod tests {
     }
 
     #[test]
+    fn climate_controls_fit_and_match_their_hit_regions() {
+        for (hit, rect) in mode_buttons()
+            .into_iter()
+            .chain(lower_buttons())
+            .chain(fan_buttons())
+        {
+            assert!(rect.x >= 0.0 && rect.y >= 0.0);
+            assert!(rect.x + rect.w <= LAYOUT_W);
+            assert!(rect.y + rect.h <= LAYOUT_H - 80.0);
+            assert_eq!(hit_climate(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5), Some(hit));
+            assert!(rect.y > slider_hit().y + slider_hit().h);
+        }
+        let track = slider_track();
+        for x in [track.x, track.x + track.w * 0.5, track.x + track.w] {
+            assert_eq!(hit_climate(x, track.y), Some(Hit::Slider));
+        }
+        let view = Viewport::fit(2048, 1200);
+        assert_eq!(view.to_layout(1024.0, 600.0), (512.0, 300.0));
+    }
+
+    #[test]
     fn buttons_sit_in_the_lower_left() {
         for (_, rect) in mode_buttons().into_iter().chain(lower_buttons()) {
-            assert!(rect.y > LAYOUT_H * 0.5);
+            assert!(rect.y > LAYOUT_H * 0.4);
             assert!(rect.x + rect.w < LAYOUT_W * 0.5);
         }
     }

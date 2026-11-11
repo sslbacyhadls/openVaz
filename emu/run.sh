@@ -17,7 +17,7 @@ exec qemu-system-aarch64 \
     -append "console=ttyAMA0,115200 vt.global_cursor_default=0 root=/dev/vda1 rootfstype=ext4 rootflags=ro ro rootwait" \
     -drive if=none,id=hd,format=raw,file="$root/emu/build/disk.img" \
     -device virtio-blk-pci,drive=hd \
-    -device virtio-gpu-pci,xres=1920,yres=1080 \
+    -device virtio-gpu-pci,xres=1024,yres=600 \
     -device virtio-tablet-pci \
     -device virtio-keyboard-pci \
     -nic none \
