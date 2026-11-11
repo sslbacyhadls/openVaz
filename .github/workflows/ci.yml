@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          rustup update stable --profile minimal
+          rustup default stable
+          rustup component add rustfmt clippy
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Check lints
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test --no-default-features
+      - name: Install the aarch64 target and linker
+        run: |
+          rustup target add aarch64-unknown-linux-musl
+          echo "$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+      - name: Build for aarch64 musl
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+        run: cargo build --release --target aarch64-unknown-linux-musl --no-default-features
