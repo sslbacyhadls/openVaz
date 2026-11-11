@@ -162,7 +162,10 @@ mod tests {
             assert!(rect.x >= 0.0 && rect.y >= 0.0);
             assert!(rect.x + rect.w <= LAYOUT_W);
             assert!(rect.y + rect.h <= LAYOUT_H - 80.0);
-            assert_eq!(hit_climate(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5), Some(hit));
+            assert_eq!(
+                hit_climate(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5),
+                Some(hit)
+            );
             assert!(rect.y > slider_hit().y + slider_hit().h);
         }
         let track = slider_track();

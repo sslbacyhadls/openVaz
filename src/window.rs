@@ -144,7 +144,9 @@ impl App {
 
     fn draw(&mut self) {
         let Some(window) = &self.window else { return };
-        let Some(surface) = &mut self.surface else { return };
+        let Some(surface) = &mut self.surface else {
+            return;
+        };
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
@@ -176,7 +178,8 @@ impl App {
                 let sx = ((x as f32 - view.ox) / view.scale) as i32;
                 let sy = ((y as f32 - view.oy) / view.scale) as i32;
                 let (red, green, blue) = if sx >= 0 && sy >= 0 && sx < src_w && sy < src_h {
-                    let color = pixels[(sy as u32 * pixmap.width() + sx as u32) as usize].demultiply();
+                    let color =
+                        pixels[(sy as u32 * pixmap.width() + sx as u32) as usize].demultiply();
                     (color.red(), color.green(), color.blue())
                 } else {
                     (0x12, 0x16, 0x1c)

@@ -189,7 +189,11 @@ fn event(channel: &'static str, value: f32) -> OutputEvent {
 }
 
 fn bool_value(on: bool) -> f32 {
-    if on { 1.0 } else { 0.0 }
+    if on {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 fn parse_bool(value: &str) -> bool {
@@ -509,8 +513,7 @@ impl Session {
                     self.journal.line("эбу ошибки нет");
                 }
                 CarMessage::Errors(list) => {
-                    self.journal
-                        .line(&format!("эбу ошибки {}", list.join(" ")));
+                    self.journal.line(&format!("эбу ошибки {}", list.join(" ")));
                 }
                 CarMessage::Clutch(on) => {
                     self.journal
