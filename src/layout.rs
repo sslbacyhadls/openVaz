@@ -23,6 +23,7 @@ pub enum Hit {
     Recirc,
     Ac,
     Slider,
+    Fan(u8),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -100,11 +101,29 @@ pub fn lower_buttons() -> [(Hit, Rect); 2] {
     [row[0], row[1]]
 }
 
+pub fn fan_buttons() -> [(Hit, Rect); 5] {
+    std::array::from_fn(|index| {
+        (
+            Hit::Fan(index as u8),
+            Rect {
+                x: 472.0 + index as f32 * 106.0,
+                y: 360.0,
+                w: 96.0,
+                h: 100.0,
+            },
+        )
+    })
+}
+
 pub fn hit_climate(x: f32, y: f32) -> Option<Hit> {
     if slider_hit().contains(x, y) {
         return Some(Hit::Slider);
     }
-    for (hit, rect) in mode_buttons().into_iter().chain(lower_buttons()) {
+    for (hit, rect) in mode_buttons()
+        .into_iter()
+        .chain(lower_buttons())
+        .chain(fan_buttons())
+    {
         if rect.contains(x, y) {
             return Some(hit);
         }
@@ -135,7 +154,11 @@ mod tests {
 
     #[test]
     fn climate_controls_fit_and_match_their_hit_regions() {
-        for (hit, rect) in mode_buttons().into_iter().chain(lower_buttons()) {
+        for (hit, rect) in mode_buttons()
+            .into_iter()
+            .chain(lower_buttons())
+            .chain(fan_buttons())
+        {
             assert!(rect.x >= 0.0 && rect.y >= 0.0);
             assert!(rect.x + rect.w <= LAYOUT_W);
             assert!(rect.y + rect.h <= LAYOUT_H - 80.0);

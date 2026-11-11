@@ -98,6 +98,21 @@ impl Climate {
         Some(event("1", self.temperature))
     }
 
+    /// Выключено и четыре фиксированные скорости; ноль снимает запрос кондиционера.
+    pub fn set_fan(&mut self, speed: u8) -> Vec<OutputEvent> {
+        let value = speed.min(4) as f32 * MIN_FAN;
+        let mut events = Vec::new();
+        if self.fan != value {
+            self.fan = value;
+            events.push(event("вентилятор", value));
+        }
+        if value == 0.0 && self.air_conditioner {
+            self.air_conditioner = false;
+            events.push(event("кондиционер", 0.0));
+        }
+        events
+    }
+
     /// Запрос уходит в ЭБУ только при уже включённом вентиляторе.
     /// Если вентилятор выключен, сначала включается его нижняя скорость.
     pub fn toggle_air_conditioner(&mut self) -> Vec<OutputEvent> {
@@ -130,7 +145,9 @@ impl Climate {
                 "face" => climate.face = parse_bool(value),
                 "feet" => climate.feet = parse_bool(value),
                 "glass" => climate.glass = parse_bool(value),
-                "fan" => climate.fan = parse_unit(value),
+                "fan" => {
+                    climate.set_fan((parse_unit(value) / MIN_FAN).round() as u8);
+                }
                 // Кондиционер после каждой загрузки выключен, даже если строка осталась в файле.
                 "air_conditioner" => {}
                 _ => {}
@@ -440,12 +457,15 @@ impl Session {
             crate::layout::Hit::Glass => vec![self.climate.toggle_glass()],
             crate::layout::Hit::Recirc => vec![self.climate.toggle_recirculation()],
             crate::layout::Hit::Ac => self.climate.toggle_air_conditioner(),
+            crate::layout::Hit::Fan(speed) => self.climate.set_fan(speed),
             crate::layout::Hit::Slider => return,
         };
-        for event in &events {
-            self.publish(event);
+        if !events.is_empty() {
+            for event in &events {
+                self.publish(event);
+            }
+            self.persist();
         }
-        self.persist();
     }
 
     fn attach_car(&mut self) {
@@ -587,6 +607,38 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect();
         assert_eq!(entries, vec![std::ffi::OsString::from("settings")]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn stopping_the_fan_also_turns_off_the_air_conditioner() {
+        let mut climate = Climate::default();
+        climate.toggle_air_conditioner();
+        assert_eq!(
+            climate.set_fan(0),
+            vec![event("вентилятор", 0.0), event("кондиционер", 0.0)]
+        );
+        assert!(!climate.air_conditioner);
+        assert_eq!(climate.fan, 0.0);
+        assert!(climate.set_fan(0).is_empty());
+        assert_eq!(climate.set_fan(255), vec![event("вентилятор", 1.0)]);
+    }
+
+    #[test]
+    fn fan_buttons_persist_all_five_speeds() {
+        let dir = std::env::temp_dir().join(format!("openvaz-fan-{}", std::process::id()));
+        let mut session = Session::boot(Some(dir.clone()));
+        session.apply_hit(crate::layout::Hit::Ac);
+        for (index, (_, rect)) in crate::layout::fan_buttons().into_iter().enumerate() {
+            session.pointer_down(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+            session.pointer_up();
+            let expected = index as f32 * MIN_FAN;
+            assert_eq!(session.climate.fan, expected);
+            assert!(!session.climate.air_conditioner);
+            assert_eq!(Session::boot(Some(dir.clone())).climate.fan, expected);
+        }
+        fs::write(dir.join("settings"), "fan=0.61\n").unwrap();
+        assert_eq!(Climate::load(&dir.join("settings")).fan, 0.5);
         fs::remove_dir_all(dir).unwrap();
     }
 

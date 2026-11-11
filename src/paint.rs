@@ -8,7 +8,7 @@ use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
 
 use crate::layout::{self, Hit, Rect};
 use crate::model::{
-    celsius_from_unit, Climate, EcuView, Screen, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
+    celsius_from_unit, Climate, EcuView, Screen, MIN_FAN, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
 };
 
 pub struct Typeface {
@@ -166,6 +166,21 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
         };
         button(pixmap, rect, on, active, hit);
     }
+    text(pixmap, fonts, 472.0, 324.0, 26.0, false, color(0x9a, 0xa3, 0xad), "Вентилятор");
+    for (hit, rect) in layout::fan_buttons() {
+        let Hit::Fan(speed) = hit else { continue };
+        let on = (climate.fan - speed as f32 * MIN_FAN).abs() < 0.001;
+        let (fill, ink) = if on {
+            (color(0xe8, 0xa3, 0x17), color(0x12, 0x16, 0x1c))
+        } else {
+            (color(0x1c, 0x24, 0x30), color(0xf4, 0xf1, 0xea))
+        };
+        fill_rect(pixmap, rect, 16.0, fill);
+        let label = if speed == 0 { "Выкл".to_string() } else { speed.to_string() };
+        let size = if speed == 0 { 24.0 } else { 32.0 };
+        let width = fonts.width(&label, size, true);
+        text(pixmap, fonts, rect.x + (rect.w - width) * 0.5, rect.y + 60.0, size, true, ink, &label);
+    }
     hint(pixmap, fonts, "Проведите пальцем влево — показания ЭБУ");
 }
 
@@ -242,7 +257,7 @@ fn button(pixmap: &mut Pixmap, rect: Rect, on: bool, active: Color, hit: Hit) {
         Hit::Glass => icon_glass(pixmap, origin, size, ink),
         Hit::Recirc => icon_recirc(pixmap, origin, size, ink),
         Hit::Ac => icon_snowflake(pixmap, origin, size, ink),
-        Hit::Slider => {}
+        Hit::Slider | Hit::Fan(_) => {}
     }
 }
 
