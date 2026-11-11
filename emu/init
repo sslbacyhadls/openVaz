@@ -1,8 +1,8 @@
 #!/bin/sh
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-export OPENVAS_STATE_DIR=/var/lib/openvaz
-export OPENVAS_KIOSK=1
-export OPENVAS_CAR=/dev/ttyAMA1
+export OPENVAZ_STATE_DIR=/var/lib/openvaz
+export OPENVAZ_KIOSK=1
+export OPENVAZ_CAR=/dev/ttyAMA1
 
 # initramfs уже перенёс proc, sys и dev.
 if [ ! -d /proc/1 ]; then

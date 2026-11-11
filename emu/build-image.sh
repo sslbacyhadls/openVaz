@@ -8,7 +8,7 @@ cd "$root"
 cache=$root/emu/cache
 build=$root/emu/build
 rootfs=$build/rootfs
-mirror=https://dl-cdn.alpinelinux.org/alpine/latest-stable
+mirror=https://dl-cdn.alpinelinux.org/alpine/v3.22
 
 mkdir -p "$cache" "$build"
 rm -rf "$rootfs"
@@ -17,7 +17,7 @@ mkdir -p "$rootfs"
 export PATH="${HOME}/.cargo/bin:${PATH}"
 sysroot=$(rustc --print sysroot)
 export PATH="${sysroot}/lib/rustlib/x86_64-unknown-linux-gnu/bin:${PATH}"
-cargo build --release --target aarch64-unknown-linux-musl --no-default-features --offline --manifest-path "$root/Cargo.toml"
+cargo build --release --target aarch64-unknown-linux-musl --no-default-features --manifest-path "$root/Cargo.toml"
 
 fetch() {
     python3 - "$1" "$2" <<'PY'
@@ -51,7 +51,7 @@ unshare --user --map-root-user "$apk" \
     --no-scripts \
     --allow-untrusted \
     -X "$mirror/main" \
-    add busybox musl linux-virt
+    add busybox musl linux-virt=6.12.117-r0
 
 for app in sh mount mkdir sleep awk dmesg cat ls ln; do
     ln -sfn busybox "$rootfs/bin/$app"
@@ -91,7 +91,7 @@ for rel in \
     kernel/fs/ext4/ext4.ko.gz \
     kernel/fs/mbcache.ko.gz \
     kernel/fs/jbd2/jbd2.ko.gz \
-    kernel/lib/crc/crc16.ko.gz
+    kernel/lib/crc16.ko.gz
 do
     plain=${rel%.gz}
     mkdir -p "$initrd_dir/lib/modules/$kver/$(dirname "$plain")"
@@ -99,10 +99,10 @@ do
 done
 cat > "$initrd_dir/lib/modules/$kver/modules.dep" <<'EOF'
 kernel/drivers/block/virtio_blk.ko:
-kernel/lib/crc/crc16.ko:
+kernel/lib/crc16.ko:
 kernel/fs/mbcache.ko:
 kernel/fs/jbd2/jbd2.ko:
-kernel/fs/ext4/ext4.ko: kernel/lib/crc/crc16.ko kernel/fs/mbcache.ko kernel/fs/jbd2/jbd2.ko
+kernel/fs/ext4/ext4.ko: kernel/lib/crc16.ko kernel/fs/mbcache.ko kernel/fs/jbd2/jbd2.ko
 EOF
 (cd "$initrd_dir" && find . -print0 | cpio --null -o -H newc | gzip -9) > "$build/initramfs.img"
 

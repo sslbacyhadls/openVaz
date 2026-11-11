@@ -539,7 +539,7 @@ impl Session {
 
 pub fn writable_state_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(dir) = std::env::var_os("OPENVAS_STATE_DIR") {
+    if let Some(dir) = std::env::var_os("OPENVAZ_STATE_DIR") {
         candidates.push(PathBuf::from(dir));
     }
     candidates.push(PathBuf::from("/var/lib/openvaz"));

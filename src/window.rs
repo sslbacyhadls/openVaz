@@ -16,7 +16,7 @@ pub fn run(session: Session) {
     let mut app = App {
         session,
         fonts: Typeface::load(),
-        kiosk: std::env::var_os("OPENVAS_KIOSK").is_some(),
+        kiosk: std::env::var_os("OPENVAZ_KIOSK").is_some(),
         window: None,
         context: None,
         surface: None,
