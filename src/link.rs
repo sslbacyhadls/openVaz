@@ -15,6 +15,10 @@ pub enum CarMessage {
     Firmware(String),
     Calibration(String),
     Reading(String, f32),
+    Cabin(f32),
+    Motor(String),
+    Gear(String),
+    Pedals(f32, f32, f32),
 }
 
 pub fn car_path() -> PathBuf {
@@ -142,6 +146,40 @@ pub fn parse_car_line(line: &str) -> Option<CarMessage> {
                 Some(CarMessage::Reading(key, value))
             }
         }
+        "салон" => {
+            let value = parts.next()?.parse::<f32>().ok()?;
+            if value.is_finite() {
+                Some(CarMessage::Cabin(value))
+            } else {
+                None
+            }
+        }
+        "мотор" => {
+            let state = parts.next()?.to_string();
+            if state.is_empty() {
+                None
+            } else {
+                Some(CarMessage::Motor(state))
+            }
+        }
+        "передача" => {
+            let gear = parts.next()?.to_string();
+            if gear.is_empty() {
+                None
+            } else {
+                Some(CarMessage::Gear(gear))
+            }
+        }
+        "педали" => {
+            let gas = parts.next()?.parse::<f32>().ok()?;
+            let brake = parts.next()?.parse::<f32>().ok()?;
+            let clutch = parts.next()?.parse::<f32>().ok()?;
+            if gas.is_finite() && brake.is_finite() && clutch.is_finite() {
+                Some(CarMessage::Pedals(gas, brake, clutch))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
@@ -191,5 +229,14 @@ mod tests {
             Some(CarMessage::Reading("обороты".into(), 860.0))
         );
         assert!(parse_car_line("показание обороты нет").is_none());
+        assert_eq!(parse_car_line("салон 21.5"), Some(CarMessage::Cabin(21.5)));
+        assert_eq!(
+            parse_car_line("педали 0.20 1.00 0.00"),
+            Some(CarMessage::Pedals(0.2, 1.0, 0.0))
+        );
+        assert_eq!(
+            parse_car_line("передача 1"),
+            Some(CarMessage::Gear("1".into()))
+        );
     }
 }

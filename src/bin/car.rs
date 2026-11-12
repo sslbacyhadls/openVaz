@@ -274,6 +274,11 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream, keyboard: bool) {
                     return;
                 }
             }
+            for line in vehicle.motion_lines() {
+                if writeln!(stream, "{line}").is_err() {
+                    return;
+                }
+            }
             for line in vehicle.wire_lines() {
                 if write!(stream, "{line}\n").is_err() {
                     return;

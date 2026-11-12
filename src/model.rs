@@ -41,6 +41,8 @@ pub struct Climate {
     pub glass: bool,
     pub fan: f32,
     pub air_conditioner: bool,
+    pub automatic: bool,
+    pub door: f32,
 }
 
 impl Default for Climate {
@@ -53,6 +55,8 @@ impl Default for Climate {
             glass: false,
             fan: 0.0,
             air_conditioner: false,
+            automatic: false,
+            door: 0.5,
         }
     }
 }
@@ -61,7 +65,7 @@ impl Climate {
     pub fn boot_events(&self) -> Vec<OutputEvent> {
         vec![
             event("0", bool_value(self.recirculation)),
-            event("1", self.temperature),
+            event("1", self.commanded_door()),
             event("2", bool_value(self.face)),
             event("3", bool_value(self.feet)),
             event("4", bool_value(self.glass)),
@@ -96,7 +100,71 @@ impl Climate {
             return None;
         }
         self.temperature = snapped;
+        if !self.automatic {
+            self.door = snapped;
+        }
+        Some(event("1", self.commanded_door()))
+    }
+
+    pub fn commanded_door(&self) -> f32 {
+        if self.automatic {
+            self.door
+        } else {
+            self.temperature
+        }
+    }
+
+    /// Ручное касание возвращает заслонку к заданию ползунка.
+    pub fn leave_auto(&mut self) -> Option<OutputEvent> {
+        if !self.automatic {
+            return None;
+        }
+        self.automatic = false;
+        self.door = self.temperature;
         Some(event("1", self.temperature))
+    }
+
+    pub fn toggle_automatic(&mut self) {
+        self.automatic = !self.automatic;
+        if self.automatic {
+            self.door = self.temperature;
+        }
+    }
+
+    /// В режиме «климат» заслонка идёт к положению заданной температуры,
+    /// с небольшой добавкой от ошибки. Скорость заслонки ограничена.
+    pub fn regulate(&mut self, cabin_c: f32, dt: f32) -> Vec<OutputEvent> {
+        if !self.automatic {
+            return Vec::new();
+        }
+        let dt = dt.clamp(0.0, 1.0);
+        let target = celsius_from_unit(self.temperature) as f32;
+        let error = target - cabin_c;
+        let desired =
+            (crate::vehicle::Vehicle::door_for_cabin(target) + error * 0.004).clamp(0.0, 1.0);
+        let step = 0.04 * dt;
+        let delta = desired - self.door;
+        let door = if delta.abs() <= step {
+            desired
+        } else {
+            self.door + step.copysign(delta)
+        };
+        let mut events = Vec::new();
+        if (door - self.door).abs() > 0.0001 {
+            self.door = door;
+            events.push(event("1", door));
+        }
+        let speed = if error.abs() > 4.0 {
+            3
+        } else if error.abs() > 1.2 {
+            2
+        } else {
+            1
+        };
+        if (self.fan / MIN_FAN).round() as u8 != speed {
+            events.extend(self.set_fan(speed));
+        }
+        events
     }
 
     /// Выключено и четыре фиксированные скорости; ноль снимает запрос кондиционера.
@@ -151,10 +219,12 @@ impl Climate {
                 }
                 // Кондиционер после каждой загрузки выключен, даже если строка осталась в файле.
                 "air_conditioner" => {}
+                "automatic" => climate.automatic = parse_bool(value),
                 _ => {}
             }
         }
         climate.air_conditioner = false;
+        climate.door = climate.temperature;
         climate
     }
 
@@ -169,6 +239,7 @@ impl Climate {
         push_bool(&mut body, "feet", self.feet);
         push_bool(&mut body, "glass", self.glass);
         push_unit(&mut body, "fan", self.fan);
+        push_bool(&mut body, "automatic", self.automatic);
         let tmp = path.with_extension("tmp");
         {
             let mut file = File::create(&tmp)?;
@@ -236,6 +307,7 @@ pub enum Screen {
     Climate,
     Ecu,
     Readings,
+    Drive,
 }
 
 impl Screen {
@@ -243,15 +315,17 @@ impl Screen {
         match self {
             Screen::Climate => Screen::Ecu,
             Screen::Ecu => Screen::Readings,
-            Screen::Readings => Screen::Climate,
+            Screen::Readings => Screen::Drive,
+            Screen::Drive => Screen::Climate,
         }
     }
 
     fn previous(self) -> Self {
         match self {
-            Screen::Climate => Screen::Readings,
+            Screen::Climate => Screen::Drive,
             Screen::Ecu => Screen::Climate,
             Screen::Readings => Screen::Ecu,
+            Screen::Drive => Screen::Readings,
         }
     }
 }
@@ -265,6 +339,7 @@ pub struct Session {
     gesture: Gesture,
     car: Option<CarPort>,
     last_repeat: Instant,
+    last_regulate: Instant,
 }
 
 pub struct EcuView {
@@ -274,6 +349,10 @@ pub struct EcuView {
     pub firmware: String,
     pub calibration: String,
     pub readings: Vec<(String, f32)>,
+    pub cabin_c: Option<f32>,
+    pub motor: String,
+    pub gear: String,
+    pub pedals: Option<(f32, f32, f32)>,
     pub linked: bool,
     heard: Option<Instant>,
 }
@@ -287,6 +366,10 @@ impl Default for EcuView {
             firmware: String::new(),
             calibration: String::new(),
             readings: Vec::new(),
+            cabin_c: None,
+            motor: String::new(),
+            gear: String::new(),
+            pedals: None,
             linked: false,
             heard: None,
         }
@@ -328,6 +411,32 @@ impl EcuView {
                 }
             }
             CarMessage::Reading(key, value) => self.store_reading(key, *value),
+            CarMessage::Cabin(value) => self.cabin_c.replace(*value) != Some(*value),
+            CarMessage::Motor(state) => {
+                if self.motor == *state {
+                    false
+                } else {
+                    self.motor.clone_from(state);
+                    true
+                }
+            }
+            CarMessage::Gear(gear) => {
+                if self.gear == *gear {
+                    false
+                } else {
+                    self.gear.clone_from(gear);
+                    true
+                }
+            }
+            CarMessage::Pedals(gas, brake, clutch) => {
+                let next = Some((*gas, *brake, *clutch));
+                if self.pedals == next {
+                    false
+                } else {
+                    self.pedals = next;
+                    true
+                }
+            }
         };
         link_changed || data_changed
     }
@@ -365,8 +474,19 @@ impl EcuView {
             self.firmware.clear();
             self.calibration.clear();
             self.readings.clear();
+            self.cabin_c = None;
+            self.motor.clear();
+            self.gear.clear();
+            self.pedals = None;
         }
         true
+    }
+
+    pub fn reading_of(&self, key: &str) -> Option<f32> {
+        self.readings
+            .iter()
+            .find(|(stored, _)| stored == key)
+            .map(|(_, value)| *value)
     }
 
     /// Строки экрана показаний: только каналы текущей прошивки.
@@ -446,6 +566,7 @@ impl Session {
             gesture: Gesture::Idle,
             car: None,
             last_repeat: Instant::now(),
+            last_regulate: Instant::now(),
         }
     }
 
@@ -487,6 +608,19 @@ impl Session {
             dirty = true;
             if !self.ecu.linked {
                 self.journal.line("эбу нет связи");
+            }
+        }
+        if self.climate.automatic {
+            if let Some(cabin) = self.ecu.cabin_c {
+                let dt = self.last_regulate.elapsed().as_secs_f32();
+                self.last_regulate = Instant::now();
+                let events = self.climate.regulate(cabin, dt);
+                if !events.is_empty() {
+                    for event in &events {
+                        self.publish(event);
+                    }
+                    dirty = true;
+                }
             }
         }
         dirty
@@ -559,6 +693,10 @@ impl Session {
     fn apply_slider(&mut self, x: f32) -> bool {
         let track = crate::layout::slider_track();
         let value = ((x - track.x) / track.w).clamp(0.0, 1.0);
+        if let Some(event) = self.climate.leave_auto() {
+            self.publish(&event);
+            self.persist();
+        }
         let Some(event) = self.climate.set_temperature(value) else {
             return false;
         };
@@ -567,15 +705,24 @@ impl Session {
     }
 
     fn apply_hit(&mut self, hit: crate::layout::Hit) {
-        let events = match hit {
+        if hit == crate::layout::Hit::Auto {
+            self.climate.toggle_automatic();
+            self.persist();
+            return;
+        }
+        let mut events = Vec::new();
+        if let Some(event) = self.climate.leave_auto() {
+            events.push(event);
+        }
+        events.extend(match hit {
             crate::layout::Hit::Face => vec![self.climate.toggle_face()],
             crate::layout::Hit::Feet => vec![self.climate.toggle_feet()],
             crate::layout::Hit::Glass => vec![self.climate.toggle_glass()],
             crate::layout::Hit::Recirc => vec![self.climate.toggle_recirculation()],
             crate::layout::Hit::Ac => self.climate.toggle_air_conditioner(),
             crate::layout::Hit::Fan(speed) => self.climate.set_fan(speed),
-            crate::layout::Hit::Slider => return,
-        };
+            crate::layout::Hit::Slider | crate::layout::Hit::Auto => return,
+        });
         if !events.is_empty() {
             for event in &events {
                 self.publish(event);
@@ -649,7 +796,11 @@ impl Session {
                 CarMessage::Calibration(text) => {
                     self.journal.line(&format!("эбу калибровка {text}"));
                 }
-                CarMessage::Reading(_, _) => {}
+                CarMessage::Reading(_, _)
+                | CarMessage::Cabin(_)
+                | CarMessage::Motor(_)
+                | CarMessage::Gear(_)
+                | CarMessage::Pedals(_, _, _) => {}
             }
         }
         changed
@@ -815,6 +966,16 @@ mod tests {
             true
         );
         assert_eq!(ecu.errors, vec!["P0217".to_string()]);
+        ecu.cabin_c = Some(21.0);
+        ecu.motor = "работает".into();
+        ecu.gear = "2".into();
+        ecu.pedals = Some((0.2, 0.0, 1.0));
+        ecu.heard = Instant::now().checked_sub(Duration::from_secs(4));
+        assert!(ecu.refresh_link());
+        assert!(ecu.cabin_c.is_none());
+        assert!(ecu.motor.is_empty());
+        assert!(ecu.gear.is_empty());
+        assert!(ecu.pedals.is_none());
     }
 
     #[test]
@@ -864,9 +1025,41 @@ mod tests {
         swipe(&mut session, -120.0);
         assert_eq!(session.screen, Screen::Readings);
         swipe(&mut session, -120.0);
+        assert_eq!(session.screen, Screen::Drive);
+        swipe(&mut session, -120.0);
         assert_eq!(session.screen, Screen::Climate);
         swipe(&mut session, 120.0);
-        assert_eq!(session.screen, Screen::Readings);
+        assert_eq!(session.screen, Screen::Drive);
+    }
+
+    #[test]
+    fn automatic_climate_reaches_the_setpoint_without_hunting() {
+        let mut climate = Climate::default();
+        climate.toggle_automatic();
+        assert_eq!(celsius_from_unit(climate.temperature), 22);
+        let mut cabin = 12.0;
+        let mut previous = climate.door;
+        let mut reversals = 0;
+        let mut direction = 0.0;
+        for _ in 0..400 {
+            let _ = climate.regulate(cabin, 0.5);
+            let delta = climate.door - previous;
+            if delta.abs() > 0.0001 {
+                let sign = delta.signum();
+                if direction != 0.0 && sign != direction {
+                    reversals += 1;
+                }
+                direction = sign;
+            }
+            previous = climate.door;
+            let supply = crate::vehicle::Vehicle::cabin_supply(climate.door);
+            let mix = ((0.02 + climate.fan * 0.12) * 0.5).min(0.4);
+            cabin += (supply - cabin) * mix;
+        }
+        assert!((cabin - 22.0).abs() < 1.0, "салон {cabin}, заслонка {}", climate.door);
+        assert!(reversals <= 2, "разворотов заслонки {reversals}");
+        climate.leave_auto();
+        assert!(!climate.automatic);
     }
 
     fn swipe(session: &mut Session, dx: f32) {

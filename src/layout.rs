@@ -24,6 +24,7 @@ pub enum Hit {
     Ac,
     Slider,
     Fan(u8),
+    Auto,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,7 +116,19 @@ pub fn fan_buttons() -> [(Hit, Rect); 5] {
     })
 }
 
+pub fn auto_button() -> Rect {
+    Rect {
+        x: 860.0,
+        y: 80.0,
+        w: 148.0,
+        h: 64.0,
+    }
+}
+
 pub fn hit_climate(x: f32, y: f32) -> Option<Hit> {
+    if auto_button().contains(x, y) {
+        return Some(Hit::Auto);
+    }
     if slider_hit().contains(x, y) {
         return Some(Hit::Slider);
     }

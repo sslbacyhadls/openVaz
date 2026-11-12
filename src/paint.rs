@@ -76,9 +76,10 @@ pub fn render(screen: Screen, climate: &Climate, ecu: &EcuView, fonts: &mut Type
     let mut pixmap = Pixmap::new(layout::LAYOUT_W as u32, layout::LAYOUT_H as u32).expect("pixmap");
     pixmap.fill(color(0x12, 0x16, 0x1c));
     match screen {
-        Screen::Climate => draw_climate(&mut pixmap, fonts, climate),
+        Screen::Climate => draw_climate(&mut pixmap, fonts, climate, ecu),
         Screen::Ecu => draw_ecu(&mut pixmap, fonts, ecu),
         Screen::Readings => draw_readings(&mut pixmap, fonts, ecu),
+        Screen::Drive => draw_drive(&mut pixmap, fonts, ecu),
     }
     draw_dots(&mut pixmap, screen);
     pixmap
@@ -94,7 +95,7 @@ pub fn write_ppm(path: &Path, pixmap: &Pixmap) -> io::Result<()> {
     Ok(())
 }
 
-fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
+fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ecu: &EcuView) {
     text(pixmap, fonts, 24.0, 64.0, 36.0, true, color(0xf4, 0xf1, 0xea), "Климат");
     let profile_w = fonts.width(PROFILE_TITLE, 24.0, false);
     text(
@@ -107,6 +108,48 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate) {
         color(0x9a, 0xa3, 0xad),
         PROFILE_TITLE,
     );
+    let mode = layout::auto_button();
+    fill_rect(
+        pixmap,
+        mode,
+        16.0,
+        if climate.automatic {
+            color(0xe0, 0xa1, 0x3a)
+        } else {
+            color(0x1c, 0x24, 0x30)
+        },
+    );
+    let mode_label = if climate.automatic { "Климат" } else { "Вручную" };
+    let mode_ink = if climate.automatic {
+        color(0x12, 0x16, 0x1c)
+    } else {
+        color(0xf4, 0xf1, 0xea)
+    };
+    let mode_w = fonts.width(mode_label, 22.0, true);
+    text(
+        pixmap,
+        fonts,
+        mode.x + (mode.w - mode_w) * 0.5,
+        mode.y + 40.0,
+        22.0,
+        true,
+        mode_ink,
+        mode_label,
+    );
+    if ecu.linked {
+        if let Some(cabin) = ecu.cabin_c {
+            text(
+                pixmap,
+                fonts,
+                24.0,
+                108.0,
+                22.0,
+                false,
+                color(0x9a, 0xa3, 0xad),
+                &format!("салон {cabin:.0}°"),
+            );
+        }
+    }
 
     let track = layout::slider_track();
     let cold = format!("{TEMP_MIN_C}°");
@@ -339,6 +382,90 @@ fn draw_readings(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
             value,
         );
     }
+    hint(pixmap, fonts, "Проведите пальцем влево — движение");
+}
+
+fn draw_drive(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        64.0,
+        36.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        "Движение",
+    );
+    if !ecu.linked {
+        let label = "нет связи с ЭБУ";
+        let width = fonts.width(label, 36.0, true);
+        text(
+            pixmap,
+            fonts,
+            (layout::LAYOUT_W - width) * 0.5,
+            300.0,
+            36.0,
+            true,
+            color(0xd4, 0x55, 0x4a),
+            label,
+        );
+        hint(pixmap, fonts, "Проведите пальцем вправо — показания");
+        return;
+    }
+    let speed = ecu
+        .reading_of("скорость")
+        .map(|value| format!("{:.0}", value.round()))
+        .unwrap_or_else(|| "нет данных".into());
+    let rpm = ecu
+        .reading_of("обороты")
+        .map(|value| format!("{:.0}", value.round()))
+        .unwrap_or_else(|| "нет данных".into());
+    text(pixmap, fonts, 24.0, 180.0, 22.0, false, color(0x9a, 0xa3, 0xad), "Скорость");
+    text(pixmap, fonts, 24.0, 250.0, 64.0, true, color(0xf4, 0xf1, 0xea), &speed);
+    text(pixmap, fonts, 24.0, 300.0, 22.0, false, color(0x9a, 0xa3, 0xad), "км/ч");
+    text(pixmap, fonts, 420.0, 180.0, 22.0, false, color(0x9a, 0xa3, 0xad), "Обороты");
+    text(pixmap, fonts, 420.0, 250.0, 64.0, true, color(0xf4, 0xf1, 0xea), &rpm);
+    let gear = if ecu.gear.is_empty() { "нет данных" } else { ecu.gear.as_str() };
+    let motor = if ecu.motor.is_empty() { "нет данных" } else { ecu.motor.as_str() };
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        380.0,
+        28.0,
+        false,
+        color(0xf4, 0xf1, 0xea),
+        &format!("передача {gear}    мотор {motor}"),
+    );
+    let (gas, brake, clutch) = ecu.pedals.unwrap_or((0.0, 0.0, 0.0));
+    for (index, (name, value, ink)) in [
+        ("газ", gas, color(0xe0, 0xa1, 0x3a)),
+        ("тормоз", brake, color(0xd4, 0x55, 0x4a)),
+        ("сцепление", clutch, color(0xf4, 0xf1, 0xea)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = 24.0 + index as f32 * 320.0;
+        text(pixmap, fonts, x, 450.0, 20.0, false, color(0x9a, 0xa3, 0xad), name);
+        fill_rect(
+            pixmap,
+            Rect { x, y: 470.0, w: 220.0, h: 18.0 },
+            8.0,
+            color(0x1c, 0x24, 0x30),
+        );
+        fill_rect(
+            pixmap,
+            Rect {
+                x,
+                y: 470.0,
+                w: 220.0 * value.clamp(0.0, 1.0),
+                h: 18.0,
+            },
+            8.0,
+            ink,
+        );
+    }
     hint(pixmap, fonts, "Проведите пальцем влево — климат");
 }
 
@@ -366,7 +493,7 @@ fn button(pixmap: &mut Pixmap, rect: Rect, on: bool, active: Color, hit: Hit) {
         Hit::Glass => icon_glass(pixmap, origin, size, ink),
         Hit::Recirc => icon_recirc(pixmap, origin, size, ink),
         Hit::Ac => icon_snowflake(pixmap, origin, size, ink),
-        Hit::Slider | Hit::Fan(_) => {}
+        Hit::Slider | Hit::Fan(_) | Hit::Auto => {}
     }
 }
 
@@ -509,9 +636,9 @@ fn draw_dots(pixmap: &mut Pixmap, screen: Screen) {
     let y = layout::LAYOUT_H - 20.0;
     let active = color(0xf4, 0xf1, 0xea);
     let idle = color(0x3c, 0x46, 0x54);
-    let order = [Screen::Climate, Screen::Ecu, Screen::Readings];
-    let step = 28.0;
-    let origin = layout::LAYOUT_W * 0.5 - step;
+    let order = [Screen::Climate, Screen::Ecu, Screen::Readings, Screen::Drive];
+    let step = 22.0;
+    let origin = layout::LAYOUT_W * 0.5 - step * 1.5;
     for (index, item) in order.iter().enumerate() {
         fill_circle(
             pixmap,

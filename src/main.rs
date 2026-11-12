@@ -15,7 +15,7 @@ fn main() {
             "--screen" => screen = args.next(),
             "--help" => {
                 println!(
-                    "openvaz [--fb /dev/fb0] [--dump-ppm кадр.ppm] [--screen climate|ecu|readings]"
+                    "openvaz [--fb /dev/fb0] [--dump-ppm кадр.ppm] [--screen climate|ecu|readings|drive]"
                 );
                 return;
             }
@@ -30,6 +30,7 @@ fn main() {
     session.screen = match screen.as_deref() {
         Some("ecu") => Screen::Ecu,
         Some("readings") => Screen::Readings,
+        Some("drive") => Screen::Drive,
         _ => Screen::Climate,
     };
 

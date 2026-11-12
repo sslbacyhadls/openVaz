@@ -130,6 +130,10 @@ pub fn run(path: &str, mut session: Session) {
     }
     let mut fonts = Typeface::load();
     let mut devices = open_inputs();
+    let mut watchdog = crate::watchdog::Watchdog::open(5).ok();
+    if watchdog.is_some() {
+        eprintln!("openvaz: сторожевой таймер 5 с");
+    }
     let mut dirty = true;
     let mut down = false;
     loop {
@@ -139,8 +143,14 @@ pub fn run(path: &str, mut session: Session) {
             dirty = false;
         }
         let _ready = wait_io(&devices, session.car_fd());
+        if let Some(watchdog) = &mut watchdog {
+            watchdog.pet();
+        }
         if session.service_car()
-            && matches!(session.screen, Screen::Ecu | Screen::Readings)
+            && matches!(
+                session.screen,
+                Screen::Climate | Screen::Ecu | Screen::Readings | Screen::Drive
+            )
         {
             dirty = true;
         }

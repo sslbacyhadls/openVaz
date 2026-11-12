@@ -13,6 +13,7 @@ pub struct Vehicle {
     ac_request: bool,
     pub clutch: bool,
     pub coolant: f32,
+    pub cabin: f32,
     pub error: Option<&'static str>,
     radiator_fan: bool,
     engine: Engine,
@@ -37,6 +38,7 @@ impl Vehicle {
             ac_request: false,
             clutch: false,
             coolant: 40.0,
+            cabin: 15.0,
             error: None,
             radiator_fan: false,
             engine: Engine::new(firmware),
@@ -78,6 +80,40 @@ impl Vehicle {
         self.error = if self.coolant >= 105.0 { Some(code) } else { None };
         let ac_load = self.clutch;
         self.engine.tick(dt, ac_load);
+        self.update_cabin(dt);
+    }
+
+    pub fn cabin_supply(door: f32) -> f32 {
+        8.0 + door.clamp(0.0, 1.0) * 40.0
+    }
+
+    pub fn door_for_cabin(celsius: f32) -> f32 {
+        ((celsius - 8.0) / 40.0).clamp(0.0, 1.0)
+    }
+
+    fn update_cabin(&mut self, dt: f32) {
+        let supply = Self::cabin_supply(self.position[1]);
+        let mix = ((0.02 + self.fan * 0.12) * dt).min(0.4);
+        self.cabin += (supply - self.cabin) * mix;
+    }
+
+    pub fn motion_lines(&self) -> [String; 4] {
+        let driver = self.engine.driver();
+        let motor = match self.engine.motor() {
+            crate::engine::Motor::Off => "выкл",
+            crate::engine::Motor::Cranking => "стартер",
+            crate::engine::Motor::Running => "работает",
+            crate::engine::Motor::Stalled => "заглох",
+        };
+        [
+            format!("салон {:.1}", self.cabin),
+            format!("мотор {motor}"),
+            format!("передача {}", driver.gear.label()),
+            format!(
+                "педали {:.2} {:.2} {:.2}",
+                driver.gas, driver.brake, driver.clutch
+            ),
+        ]
     }
 
     pub fn set_driver(&mut self, driver: Driver) {

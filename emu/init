@@ -29,6 +29,7 @@ echo "openvaz: корень $(awk '$2=="/"{print $4; exit}' /proc/mounts)"
 modprobe virtio_gpu 2>/dev/null || modprobe virtio-gpu 2>/dev/null || true
 modprobe evdev 2>/dev/null || echo "openvaz: нет модуля evdev"
 modprobe virtio_input 2>/dev/null || true
+modprobe softdog soft_margin=5 2>/dev/null || true
 
 i=0
 while [ ! -e /dev/fb0 ] && [ "$i" -lt 50 ]; do
