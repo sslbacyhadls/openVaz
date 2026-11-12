@@ -80,7 +80,10 @@ fn print_help() {
     println!("По умолчанию сокет emu/build/car.sock и прошивка итэлма-м74.");
     println!("Прошивки:");
     for firmware in firmware::catalog() {
-        println!("  {}  {}  {}", firmware.id, firmware.family, firmware.calibration);
+        println!(
+            "  {}  {}  {}",
+            firmware.id, firmware.family, firmware.calibration
+        );
     }
 }
 
@@ -285,7 +288,7 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream, keyboard: bool) {
                 }
             }
             for line in vehicle.wire_lines() {
-                if write!(stream, "{line}\n").is_err() {
+                if writeln!(stream, "{line}").is_err() {
                     return;
                 }
             }
@@ -331,7 +334,11 @@ fn draw(vehicle: &Vehicle, shown: &mut String, keyboard: bool) {
         driver.gas,
         driver.brake,
         driver.clutch,
-        if driver.ignition { "вкл" } else { "выкл" }
+        if driver.ignition {
+            "вкл"
+        } else {
+            "выкл"
+        }
     )));
     frame.push('\n');
     for (index, name) in DAMPERS.iter().enumerate() {
@@ -461,7 +468,7 @@ impl Drop for RawTerm {
         unsafe {
             libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.original);
         }
-        print!("\x1b[?25h\n");
+        println!("\x1b[?25h");
         let _ = io::stdout().flush();
     }
 }

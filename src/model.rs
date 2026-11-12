@@ -763,8 +763,10 @@ impl Session {
 
     fn publish(&mut self, event: &OutputEvent) {
         if self.channel_blocked(event.channel) {
-            self.journal
-                .line(&format!("заслонка {} вне диапазона, не трогаю", event.channel));
+            self.journal.line(&format!(
+                "заслонка {} вне диапазона, не трогаю",
+                event.channel
+            ));
             return;
         }
         self.journal.output(event);
@@ -861,7 +863,11 @@ fn damper_index(channel: &str) -> Option<usize> {
     }
 }
 
-fn open_outputs(state_dir: Option<&Path>, events: &[OutputEvent], journal: &mut Journal) -> Outputs {
+fn open_outputs(
+    state_dir: Option<&Path>,
+    events: &[OutputEvent],
+    journal: &mut Journal,
+) -> Outputs {
     if std::env::var("OPENVAS_OUTPUT").as_deref() != Ok("hardware") {
         journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
         return Outputs::Text;
@@ -1085,14 +1091,20 @@ mod tests {
 
     #[test]
     fn readings_list_only_the_channels_of_the_selected_firmware() {
-        let mut ecu = EcuView::default();
-        ecu.linked = true;
-        ecu.firmware = "январь-7.2".into();
+        let mut ecu = EcuView {
+            linked: true,
+            firmware: "январь-7.2".into(),
+            ..EcuView::default()
+        };
         ecu.readings.push(("кислород2".into(), 0.68));
         ecu.readings.push(("обороты".into(), 850.0));
         let rows = ecu.reading_rows().unwrap();
-        assert!(rows.iter().any(|(title, value)| *title == "Обороты" && value == "850 об/мин"));
-        assert!(rows.iter().all(|(title, _)| *title != "Второй датчик кислорода"));
+        assert!(rows
+            .iter()
+            .any(|(title, value)| *title == "Обороты" && value == "850 об/мин"));
+        assert!(rows
+            .iter()
+            .all(|(title, _)| *title != "Второй датчик кислорода"));
         assert!(rows.iter().any(|(_, value)| value == "нет данных"));
         ecu.firmware = "итэлма-м74".into();
         let m74 = ecu.reading_rows().unwrap();
@@ -1142,15 +1154,19 @@ mod tests {
             let mix = ((0.02 + climate.fan * 0.12) * 0.5).min(0.4);
             cabin += (supply - cabin) * mix;
         }
-        assert!((cabin - 22.0).abs() < 1.0, "салон {cabin}, заслонка {}", climate.door);
+        assert!(
+            (cabin - 22.0).abs() < 1.0,
+            "салон {cabin}, заслонка {}",
+            climate.door
+        );
         assert!(reversals <= 2, "разворотов заслонки {reversals}");
         climate.leave_auto();
         assert!(!climate.automatic);
     }
 
     fn swipe(session: &mut Session, dx: f32) {
-        session.pointer_down(900.0, 250.0);
-        session.pointer_move(900.0 + dx, 250.0);
+        session.pointer_down(200.0, 540.0);
+        session.pointer_move(200.0 + dx, 540.0);
         session.pointer_up();
     }
 }

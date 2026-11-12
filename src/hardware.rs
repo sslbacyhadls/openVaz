@@ -101,7 +101,11 @@ pub fn unit_from_volts(cal: ServoCal, volts: f32) -> Option<f32> {
 
 /// Удержание измеренного положения и цель, к которой потом вести заслонку.
 /// `None` в цели значит заслонку не трогать.
-pub fn startup_move(cal: &BoardCal, volts: [Option<f32>; 5], targets: [f32; 5]) -> ([ChannelCmd; 5], [Option<f32>; 5]) {
+pub fn startup_move(
+    cal: &BoardCal,
+    volts: [Option<f32>; 5],
+    targets: [f32; 5],
+) -> ([ChannelCmd; 5], [Option<f32>; 5]) {
     let mut hold = [ChannelCmd::Off; 5];
     let mut then = [None; 5];
     for index in 0..5 {
@@ -205,7 +209,11 @@ impl Board {
         let i2c_path = env_path("OPENVAS_I2C", "/dev/i2c-3");
         let i2c = OpenOptions::new().read(true).write(true).open(&i2c_path)?;
         unsafe {
-            if libc::ioctl(i2c.as_raw_fd(), ioctl_req(I2C_SLAVE), PCA9685_ADDR as libc::c_ulong) < 0
+            if libc::ioctl(
+                i2c.as_raw_fd(),
+                ioctl_req(I2C_SLAVE),
+                PCA9685_ADDR as libc::c_ulong,
+            ) < 0
             {
                 return Err(io::Error::last_os_error());
             }
@@ -297,10 +305,9 @@ impl Board {
             "0" | "1" | "2" | "3" | "4" => {
                 let index = (event.channel.as_bytes()[0] - b'0') as usize;
                 if self.skipped[index] {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("заслонка {index} вне диапазона, не трогаю"),
-                    ));
+                    return Err(io::Error::other(format!(
+                        "заслонка {index} вне диапазона, не трогаю"
+                    )));
                 }
                 let index = index as u8;
                 let Some(cal) = self.cal.servos[index as usize] else {
@@ -351,11 +358,14 @@ impl Board {
         spi_ioctl(&spi, 0x4001_6B03, &bits)?;
         spi_ioctl(&spi, 0x4004_6B04, &speed)?;
         let mut volts = [None; 5];
-        for channel in 0..5 {
-            volts[channel] = Some(read_channel(&spi, channel as u8)?);
+        for (channel, slot) in volts.iter_mut().enumerate() {
+            *slot = Some(read_channel(&spi, channel as u8)?);
         }
         let cabin = read_channel(&spi, 5).ok().and_then(cabin_celsius);
-        Ok(Inputs { volts, cabin_c: cabin })
+        Ok(Inputs {
+            volts,
+            cabin_c: cabin,
+        })
     }
 
     fn write_cmds(&self, cmds: &[ChannelCmd; 5]) -> io::Result<()> {
@@ -464,13 +474,7 @@ fn request_output(chip: &Path, offset: u32, consumer: &str, high: bool) -> io::R
     let n = name.len().min(31);
     request.consumer[..n].copy_from_slice(&name[..n]);
     request.config.flags = GPIO_V2_LINE_FLAG_OUTPUT;
-    let rc = unsafe {
-        libc::ioctl(
-            chip.as_raw_fd(),
-            ioctl_req(GPIO_V2_GET_LINE),
-            &mut request,
-        )
-    };
+    let rc = unsafe { libc::ioctl(chip.as_raw_fd(), ioctl_req(GPIO_V2_GET_LINE), &mut request) };
     if rc < 0 {
         return Err(io::Error::last_os_error());
     }

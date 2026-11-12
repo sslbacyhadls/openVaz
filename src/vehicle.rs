@@ -78,7 +78,11 @@ impl Vehicle {
         self.update_radiator_fan();
         self.clutch = self.ac_request && self.fan >= 0.2 && self.coolant < 105.0;
         let code = self.engine.firmware().overheat_code;
-        self.error = if self.coolant >= 105.0 { Some(code) } else { None };
+        self.error = if self.coolant >= 105.0 {
+            Some(code)
+        } else {
+            None
+        };
         let ac_load = self.clutch;
         self.engine.tick(dt, ac_load);
         self.update_cabin(dt);
@@ -264,7 +268,11 @@ mod tests {
                 .skip(2)
                 .map(|line| line.split_whitespace().nth(1).unwrap())
                 .collect();
-            let expected: Vec<&str> = firmware.channels.iter().map(|channel| channel.key).collect();
+            let expected: Vec<&str> = firmware
+                .channels
+                .iter()
+                .map(|channel| channel.key)
+                .collect();
             assert_eq!(keys, expected);
             vehicle.coolant = 110.0;
             vehicle.tick(0.0);
@@ -272,7 +280,13 @@ mod tests {
         }
         let m74 = Vehicle::with_firmware(firmware::find("итэлма-м74").unwrap());
         let january = Vehicle::with_firmware(firmware::find("январь-7.2").unwrap());
-        assert!(m74.wire_lines().iter().any(|line| line.contains("кислород2")));
-        assert!(!january.wire_lines().iter().any(|line| line.contains("кислород2")));
+        assert!(m74
+            .wire_lines()
+            .iter()
+            .any(|line| line.contains("кислород2")));
+        assert!(!january
+            .wire_lines()
+            .iter()
+            .any(|line| line.contains("кислород2")));
     }
 }

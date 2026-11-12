@@ -170,13 +170,8 @@ impl Engine {
                     0.0
                 }
             }
-            "вентилятор_охлаждения" => {
-                if radiator_fan {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
+            "вентилятор_охлаждения" if radiator_fan => 1.0,
+            "вентилятор_охлаждения" => 0.0,
             _ => 0.0,
         }
     }
@@ -224,7 +219,10 @@ impl Engine {
         let ratio = self.driver.gear.ratio();
         let slip = (1.0 - self.driver.clutch).clamp(0.0, 1.0);
         let mut accel = 0.0;
-        if self.motor == Motor::Running && ratio != 0.0 && slip > 0.05 && self.rpm < self.firmware.rev_limit - 50.0
+        if self.motor == Motor::Running
+            && ratio != 0.0
+            && slip > 0.05
+            && self.rpm < self.firmware.rev_limit - 50.0
         {
             let load = (self.throttle * 0.85 + 0.08).min(1.0);
             let mut torque = self.firmware.peak_nm * load * slip;
@@ -371,7 +369,11 @@ mod tests {
         drive(&mut motor, 0.7, 0.0, 0.35, Gear::Forward(1), 8.0);
         assert!(motor.speed_kmh() > 15.0, "скорость {}", motor.speed_kmh());
         drive(&mut motor, 0.0, 1.0, 1.0, Gear::Forward(1), 4.0);
-        assert!(motor.speed_kmh().abs() < 1.0, "после тормоза {}", motor.speed_kmh());
+        assert!(
+            motor.speed_kmh().abs() < 1.0,
+            "после тормоза {}",
+            motor.speed_kmh()
+        );
     }
 
     #[test]

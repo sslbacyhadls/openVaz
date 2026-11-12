@@ -27,21 +27,96 @@ pub struct Firmware {
 }
 
 const SHARED: &[Channel] = &[
-    Channel { key: "обороты", title: "Обороты", unit: "об/мин", decimals: 0 },
-    Channel { key: "обороты_хх", title: "Обороты холостого хода", unit: "об/мин", decimals: 0 },
-    Channel { key: "скорость", title: "Скорость", unit: "км/ч", decimals: 0 },
-    Channel { key: "дроссель", title: "Дроссельная заслонка", unit: "%", decimals: 0 },
-    Channel { key: "воздух", title: "Температура воздуха", unit: "°C", decimals: 0 },
-    Channel { key: "дмрв", title: "Расход воздуха", unit: "кг/ч", decimals: 1 },
-    Channel { key: "впрыск", title: "Время впрыска", unit: "мс", decimals: 2 },
-    Channel { key: "зажигание", title: "Угол опережения", unit: "°", decimals: 1 },
-    Channel { key: "напряжение", title: "Напряжение бортсети", unit: "В", decimals: 1 },
-    Channel { key: "коррекция", title: "Коррекция впрыска", unit: "", decimals: 2 },
-    Channel { key: "кислород", title: "Датчик кислорода", unit: "В", decimals: 2 },
-    Channel { key: "рхх", title: "Регулятор холостого хода", unit: "шаги", decimals: 0 },
-    Channel { key: "продувка", title: "Продувка адсорбера", unit: "%", decimals: 0 },
-    Channel { key: "детонация", title: "Отвод угла по детонации", unit: "°", decimals: 1 },
-    Channel { key: "вентилятор_охлаждения", title: "Вентилятор охлаждения", unit: "", decimals: 0 },
+    Channel {
+        key: "обороты",
+        title: "Обороты",
+        unit: "об/мин",
+        decimals: 0,
+    },
+    Channel {
+        key: "обороты_хх",
+        title: "Обороты холостого хода",
+        unit: "об/мин",
+        decimals: 0,
+    },
+    Channel {
+        key: "скорость",
+        title: "Скорость",
+        unit: "км/ч",
+        decimals: 0,
+    },
+    Channel {
+        key: "дроссель",
+        title: "Дроссельная заслонка",
+        unit: "%",
+        decimals: 0,
+    },
+    Channel {
+        key: "воздух",
+        title: "Температура воздуха",
+        unit: "°C",
+        decimals: 0,
+    },
+    Channel {
+        key: "дмрв",
+        title: "Расход воздуха",
+        unit: "кг/ч",
+        decimals: 1,
+    },
+    Channel {
+        key: "впрыск",
+        title: "Время впрыска",
+        unit: "мс",
+        decimals: 2,
+    },
+    Channel {
+        key: "зажигание",
+        title: "Угол опережения",
+        unit: "°",
+        decimals: 1,
+    },
+    Channel {
+        key: "напряжение",
+        title: "Напряжение бортсети",
+        unit: "В",
+        decimals: 1,
+    },
+    Channel {
+        key: "коррекция",
+        title: "Коррекция впрыска",
+        unit: "",
+        decimals: 2,
+    },
+    Channel {
+        key: "кислород",
+        title: "Датчик кислорода",
+        unit: "В",
+        decimals: 2,
+    },
+    Channel {
+        key: "рхх",
+        title: "Регулятор холостого хода",
+        unit: "шаги",
+        decimals: 0,
+    },
+    Channel {
+        key: "продувка",
+        title: "Продувка адсорбера",
+        unit: "%",
+        decimals: 0,
+    },
+    Channel {
+        key: "детонация",
+        title: "Отвод угла по детонации",
+        unit: "°",
+        decimals: 1,
+    },
+    Channel {
+        key: "вентилятор_охлаждения",
+        title: "Вентилятор охлаждения",
+        unit: "",
+        decimals: 0,
+    },
 ];
 
 const REAR_OXYGEN: Channel = Channel {
@@ -52,8 +127,22 @@ const REAR_OXYGEN: Channel = Channel {
 };
 
 const M74_CHANNELS: &[Channel] = &[
-    SHARED[0], SHARED[1], SHARED[2], SHARED[3], SHARED[4], SHARED[5], SHARED[6], SHARED[7],
-    SHARED[8], SHARED[9], SHARED[10], REAR_OXYGEN, SHARED[11], SHARED[12], SHARED[13], SHARED[14],
+    SHARED[0],
+    SHARED[1],
+    SHARED[2],
+    SHARED[3],
+    SHARED[4],
+    SHARED[5],
+    SHARED[6],
+    SHARED[7],
+    SHARED[8],
+    SHARED[9],
+    SHARED[10],
+    REAR_OXYGEN,
+    SHARED[11],
+    SHARED[12],
+    SHARED[13],
+    SHARED[14],
 ];
 
 const JANUARY_CHANNELS: &[Channel] = SHARED;
