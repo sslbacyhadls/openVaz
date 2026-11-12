@@ -235,6 +235,25 @@ impl Journal {
 pub enum Screen {
     Climate,
     Ecu,
+    Readings,
+}
+
+impl Screen {
+    fn next(self) -> Self {
+        match self {
+            Screen::Climate => Screen::Ecu,
+            Screen::Ecu => Screen::Readings,
+            Screen::Readings => Screen::Climate,
+        }
+    }
+
+    fn previous(self) -> Self {
+        match self {
+            Screen::Climate => Screen::Readings,
+            Screen::Ecu => Screen::Climate,
+            Screen::Readings => Screen::Ecu,
+        }
+    }
 }
 
 pub struct Session {
@@ -348,6 +367,52 @@ impl EcuView {
             self.readings.clear();
         }
         true
+    }
+
+    /// Строки экрана показаний: только каналы текущей прошивки.
+    /// `None`, пока связи нет или имя прошивки панели неизвестно.
+    pub fn reading_rows(&self) -> Option<Vec<(&'static str, String)>> {
+        if !self.linked {
+            return None;
+        }
+        let firmware = firmware::find(&self.firmware)?;
+        Some(
+            firmware
+                .channels
+                .iter()
+                .map(|channel| {
+                    let value = self
+                        .readings
+                        .iter()
+                        .find(|(key, _)| key == channel.key)
+                        .map(|(_, stored)| shown_reading(channel, *stored))
+                        .unwrap_or_else(|| "нет данных".to_string());
+                    (channel.title, value)
+                })
+                .collect(),
+        )
+    }
+
+    pub fn readings_heading(&self) -> Option<String> {
+        if !self.linked {
+            return None;
+        }
+        let firmware = firmware::find(&self.firmware)?;
+        let calibration = if self.calibration.is_empty() {
+            firmware.calibration
+        } else {
+            self.calibration.as_str()
+        };
+        Some(format!("{}  {calibration}", firmware.family))
+    }
+}
+
+fn shown_reading(channel: &firmware::Channel, value: f32) -> String {
+    let number = firmware::format_value(channel, value);
+    if channel.unit.is_empty() {
+        number
+    } else {
+        format!("{number} {}", channel.unit)
     }
 }
 
@@ -467,13 +532,12 @@ impl Session {
                 let dx = x - x0;
                 let dy = y - y0;
                 if dx.abs() >= 72.0 && dx.abs() > dy.abs() * 1.2 {
-                    if dx < 0.0 && self.screen == Screen::Climate {
-                        self.screen = Screen::Ecu;
-                        *fired = true;
-                    } else if dx > 0.0 && self.screen == Screen::Ecu {
-                        self.screen = Screen::Climate;
-                        *fired = true;
-                    }
+                    self.screen = if dx < 0.0 {
+                        self.screen.next()
+                    } else {
+                        self.screen.previous()
+                    };
+                    *fired = true;
                 }
             }
             _ => {}
@@ -769,5 +833,45 @@ mod tests {
         ecu.heard = Instant::now().checked_sub(Duration::from_secs(4));
         assert!(ecu.refresh_link());
         assert!(ecu.firmware.is_empty());
+        assert!(ecu.reading_rows().is_none());
+    }
+
+    #[test]
+    fn readings_list_only_the_channels_of_the_selected_firmware() {
+        let mut ecu = EcuView::default();
+        ecu.linked = true;
+        ecu.firmware = "январь-7.2".into();
+        ecu.readings.push(("кислород2".into(), 0.68));
+        ecu.readings.push(("обороты".into(), 850.0));
+        let rows = ecu.reading_rows().unwrap();
+        assert!(rows.iter().any(|(title, value)| *title == "Обороты" && value == "850 об/мин"));
+        assert!(rows.iter().all(|(title, _)| *title != "Второй датчик кислорода"));
+        assert!(rows.iter().any(|(_, value)| value == "нет данных"));
+        ecu.firmware = "итэлма-м74".into();
+        let m74 = ecu.reading_rows().unwrap();
+        assert!(m74.len() > rows.len());
+        assert!(m74.iter().any(|(title, value)| {
+            *title == "Второй датчик кислорода" && value == "0.68 В"
+        }));
+    }
+
+    #[test]
+    fn swipe_walks_climate_ecu_and_readings() {
+        let mut session = Session::boot(None);
+        assert_eq!(session.screen, Screen::Climate);
+        swipe(&mut session, -120.0);
+        assert_eq!(session.screen, Screen::Ecu);
+        swipe(&mut session, -120.0);
+        assert_eq!(session.screen, Screen::Readings);
+        swipe(&mut session, -120.0);
+        assert_eq!(session.screen, Screen::Climate);
+        swipe(&mut session, 120.0);
+        assert_eq!(session.screen, Screen::Readings);
+    }
+
+    fn swipe(session: &mut Session, dx: f32) {
+        session.pointer_down(900.0, 250.0);
+        session.pointer_move(900.0 + dx, 250.0);
+        session.pointer_up();
     }
 }

@@ -139,7 +139,9 @@ pub fn run(path: &str, mut session: Session) {
             dirty = false;
         }
         let _ready = wait_io(&devices, session.car_fd());
-        if session.service_car() && session.screen == Screen::Ecu {
+        if session.service_car()
+            && matches!(session.screen, Screen::Ecu | Screen::Readings)
+        {
             dirty = true;
         }
         for device in &mut devices {

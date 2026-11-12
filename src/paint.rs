@@ -78,6 +78,7 @@ pub fn render(screen: Screen, climate: &Climate, ecu: &EcuView, fonts: &mut Type
     match screen {
         Screen::Climate => draw_climate(&mut pixmap, fonts, climate),
         Screen::Ecu => draw_ecu(&mut pixmap, fonts, ecu),
+        Screen::Readings => draw_readings(&mut pixmap, fonts, ecu),
     }
     draw_dots(&mut pixmap, screen);
     pixmap
@@ -230,7 +231,115 @@ fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
             );
         }
     }
-    hint(pixmap, fonts, "Проведите пальцем вправо — климат");
+    hint(pixmap, fonts, "Проведите пальцем влево — показания");
+}
+
+fn draw_readings(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        64.0,
+        36.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        "Показания",
+    );
+    if !ecu.linked {
+        let label = "нет связи с ЭБУ";
+        let size = 36.0;
+        let width = fonts.width(label, size, true);
+        text(
+            pixmap,
+            fonts,
+            (layout::LAYOUT_W - width) * 0.5,
+            300.0,
+            size,
+            true,
+            color(0xd4, 0x55, 0x4a),
+            label,
+        );
+        hint(pixmap, fonts, "Проведите пальцем вправо — ЭБУ");
+        return;
+    }
+    if let Some(heading) = ecu.readings_heading() {
+        let width = fonts.width(&heading, 22.0, false);
+        text(
+            pixmap,
+            fonts,
+            layout::LAYOUT_W - 24.0 - width,
+            58.0,
+            22.0,
+            false,
+            color(0x9a, 0xa3, 0xad),
+            &heading,
+        );
+    }
+    let Some(rows) = ecu.reading_rows() else {
+        text(
+            pixmap,
+            fonts,
+            24.0,
+            160.0,
+            28.0,
+            false,
+            color(0x9a, 0xa3, 0xad),
+            "нет данных",
+        );
+        hint(pixmap, fonts, "Проведите пальцем влево — климат");
+        return;
+    };
+    let columns = 2;
+    let per_column = rows.len().div_ceil(columns);
+    let row_h = 52.0;
+    let top = 108.0;
+    let col_w = 488.0;
+    for (index, (title, value)) in rows.iter().enumerate() {
+        let column = index / per_column;
+        let row = index % per_column;
+        let x = 24.0 + column as f32 * (col_w + 16.0);
+        let y = top + row as f32 * row_h;
+        fill_rect(
+            pixmap,
+            Rect {
+                x,
+                y: y + 8.0,
+                w: col_w,
+                h: 1.0,
+            },
+            0.0,
+            color(0x2a, 0x34, 0x42),
+        );
+        let value_w = fonts.width(value, 22.0, true);
+        let title_room = (col_w - value_w - 16.0).max(40.0);
+        let title = fit_label(fonts, title, 18.0, title_room);
+        text(
+            pixmap,
+            fonts,
+            x,
+            y + 36.0,
+            18.0,
+            false,
+            color(0x9a, 0xa3, 0xad),
+            &title,
+        );
+        let ink = if value == "нет данных" {
+            color(0x9a, 0xa3, 0xad)
+        } else {
+            color(0xf4, 0xf1, 0xea)
+        };
+        text(
+            pixmap,
+            fonts,
+            x + col_w - value_w,
+            y + 36.0,
+            22.0,
+            true,
+            ink,
+            value,
+        );
+    }
+    hint(pixmap, fonts, "Проведите пальцем влево — климат");
 }
 
 fn card(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, y: f32, title: &str, value: &str, value_color: Color) {
@@ -364,6 +473,23 @@ fn icon_snowflake(pixmap: &mut Pixmap, origin: (f32, f32), size: f32, ink: Color
     }
 }
 
+fn fit_label(fonts: &mut Typeface, text: &str, size: f32, max_width: f32) -> String {
+    if fonts.width(text, size, false) <= max_width {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut count = chars.len();
+    while count > 1 {
+        count -= 1;
+        let mut cut: String = chars.iter().take(count).collect();
+        cut.push('…');
+        if fonts.width(&cut, size, false) <= max_width {
+            return cut;
+        }
+    }
+    "…".to_string()
+}
+
 fn hint(pixmap: &mut Pixmap, fonts: &mut Typeface, label: &str) {
     let size = 22.0;
     let width = fonts.width(label, size, false);
@@ -383,20 +509,18 @@ fn draw_dots(pixmap: &mut Pixmap, screen: Screen) {
     let y = layout::LAYOUT_H - 20.0;
     let active = color(0xf4, 0xf1, 0xea);
     let idle = color(0x3c, 0x46, 0x54);
-    fill_circle(
-        pixmap,
-        layout::LAYOUT_W * 0.5 - 14.0,
-        y,
-        6.0,
-        if screen == Screen::Climate { active } else { idle },
-    );
-    fill_circle(
-        pixmap,
-        layout::LAYOUT_W * 0.5 + 14.0,
-        y,
-        6.0,
-        if screen == Screen::Ecu { active } else { idle },
-    );
+    let order = [Screen::Climate, Screen::Ecu, Screen::Readings];
+    let step = 28.0;
+    let origin = layout::LAYOUT_W * 0.5 - step;
+    for (index, item) in order.iter().enumerate() {
+        fill_circle(
+            pixmap,
+            origin + index as f32 * step,
+            y,
+            6.0,
+            if screen == *item { active } else { idle },
+        );
+    }
 }
 
 fn text(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, baseline: f32, size: f32, bold: bool, color: Color, label: &str) {
@@ -582,6 +706,34 @@ fn rounded(rect: Rect, radius: f32) -> tiny_skia::Path {
     path.quad_to(x, y, x + radius, y);
     path.close();
     path.finish().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::EcuView;
+
+    fn linked(id: &str) -> EcuView {
+        let mut ecu = EcuView::default();
+        ecu.linked = true;
+        ecu.firmware = id.to_string();
+        ecu.calibration = crate::firmware::find(id).unwrap().calibration.to_string();
+        ecu.readings.push(("обороты".into(), 860.0));
+        ecu
+    }
+
+    #[test]
+    fn readings_frames_differ_between_the_two_firmwares() {
+        let mut fonts = Typeface::load();
+        let climate = Climate::default();
+        let m74 = render(Screen::Readings, &climate, &linked("итэлма-м74"), &mut fonts);
+        let january = render(Screen::Readings, &climate, &linked("январь-7.2"), &mut fonts);
+        assert_eq!(m74.width(), 1024);
+        assert_eq!(m74.height(), 600);
+        assert_ne!(m74.data(), january.data());
+        let silent = render(Screen::Readings, &climate, &EcuView::default(), &mut fonts);
+        assert_ne!(silent.data(), m74.data());
+    }
 }
 
 fn color(r: u8, g: u8, b: u8) -> Color {

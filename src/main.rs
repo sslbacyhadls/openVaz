@@ -14,7 +14,9 @@ fn main() {
             "--dump-ppm" => dump = args.next(),
             "--screen" => screen = args.next(),
             "--help" => {
-                println!("openvaz [--fb /dev/fb0] [--dump-ppm кадр.ppm] [--screen climate|ecu]");
+                println!(
+                    "openvaz [--fb /dev/fb0] [--dump-ppm кадр.ppm] [--screen climate|ecu|readings]"
+                );
                 return;
             }
             other => {
@@ -25,9 +27,11 @@ fn main() {
     }
 
     let mut session = Session::boot(writable_state_dir());
-    if screen.as_deref() == Some("ecu") {
-        session.screen = Screen::Ecu;
-    }
+    session.screen = match screen.as_deref() {
+        Some("ecu") => Screen::Ecu,
+        Some("readings") => Screen::Readings,
+        _ => Screen::Climate,
+    };
 
     if let Some(path) = dump {
         let mut fonts = Typeface::load();

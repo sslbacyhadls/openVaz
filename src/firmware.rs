@@ -28,7 +28,7 @@ pub struct Firmware {
 
 const SHARED: &[Channel] = &[
     Channel { key: "обороты", title: "Обороты", unit: "об/мин", decimals: 0 },
-    Channel { key: "обороты_хх", title: "Желаемые обороты холостого хода", unit: "об/мин", decimals: 0 },
+    Channel { key: "обороты_хх", title: "Обороты холостого хода", unit: "об/мин", decimals: 0 },
     Channel { key: "скорость", title: "Скорость", unit: "км/ч", decimals: 0 },
     Channel { key: "дроссель", title: "Дроссельная заслонка", unit: "%", decimals: 0 },
     Channel { key: "воздух", title: "Температура воздуха", unit: "°C", decimals: 0 },
