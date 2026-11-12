@@ -1,4 +1,5 @@
 pub mod cabin;
+pub mod connection;
 pub mod engine;
 pub mod fb;
 pub mod firmware;

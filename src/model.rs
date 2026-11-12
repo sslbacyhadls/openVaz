@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::connection::{CarConnection, CarListener};
 use crate::firmware;
 use crate::hardware::Board;
 use crate::link::{CarMessage, CarPort, LINK_TIMEOUT};
@@ -342,7 +343,8 @@ pub struct Session {
     settings_path: Option<PathBuf>,
     journal: Journal,
     gesture: Gesture,
-    car: Option<CarPort>,
+    car: Option<CarConnection>,
+    car_listener: Option<CarListener>,
     last_repeat: Instant,
     last_regulate: Instant,
     outputs: Outputs,
@@ -557,6 +559,7 @@ impl Session {
             journal,
             gesture: Gesture::Idle,
             car: None,
+            car_listener: None,
             last_repeat: Instant::now(),
             last_regulate: Instant::now(),
             outputs,
@@ -564,8 +567,16 @@ impl Session {
         }
     }
 
+    pub fn listen_car(&mut self, path: &Path) -> io::Result<()> {
+        self.car_listener = Some(CarListener::bind(path)?);
+        self.car = None;
+        self.journal
+            .line(&format!("жду автомобиль на {}", path.display()));
+        Ok(())
+    }
+
     pub fn car_fd(&self) -> Option<i32> {
-        self.car.as_ref().map(CarPort::fd)
+        self.car.as_ref().map(CarConnection::fd)
     }
 
     /// Читает ответы автомобиля и раз в секунду повторяет команды,
@@ -726,13 +737,14 @@ impl Session {
     }
 
     fn attach_car(&mut self) {
-        let path = crate::link::car_path();
-        let Ok(port) = CarPort::open(&path) else {
-            return;
+        let port = if let Some(listener) = &self.car_listener {
+            listener.accept()
+        } else {
+            CarPort::open(&crate::link::car_path()).map(CarConnection::Serial)
         };
+        let Ok(port) = port else { return };
         self.car = Some(port);
-        self.journal
-            .line(&format!("автомобиль подключён {}", path.display()));
+        self.journal.line("автомобиль подключён");
         self.repeat_commands();
         self.last_repeat = Instant::now();
     }
@@ -1045,6 +1057,49 @@ mod tests {
         assert!(!session.channel_blocked("1"));
         session.note_car(CarMessage::Position("2".into(), Some(0.4)));
         assert!(!session.channel_blocked("2"));
+    }
+
+    #[test]
+    fn desktop_socket_updates_ecu_sends_controls_and_reconnects() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+        let path =
+            std::env::temp_dir().join(format!("openvaz-session-{}.sock", std::process::id()));
+        let mut session = Session::boot(None);
+        session.listen_car(&path).unwrap();
+        let mut peer = UnixStream::connect(&path).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        peer.write_all("прошивка итэлма-м74\nохлаждение 87\nпоказание обороты 900\n".as_bytes())
+            .unwrap();
+        assert!(session.service_car());
+        assert!(session.ecu.linked);
+        assert_eq!(session.ecu.coolant_c, Some(87));
+        assert_eq!(session.ecu.readings, vec![("обороты".into(), 900.0)]);
+        let mut boot = vec![
+            0;
+            session
+                .climate
+                .boot_events()
+                .iter()
+                .map(|event| format!("выход {} значение {:.2}\n", event.channel, event.value).len())
+                .sum()
+        ];
+        peer.read_exact(&mut boot).unwrap();
+        session.apply_hit(crate::layout::Hit::Fan(3));
+        let expected = "выход вентилятор значение 0.75\n".as_bytes();
+        let mut command = vec![0; expected.len()];
+        peer.read_exact(&mut command).unwrap();
+        assert_eq!(command, expected);
+        drop(peer);
+        assert!(session.service_car());
+        assert!(!session.ecu.linked);
+        let mut peer = UnixStream::connect(&path).unwrap();
+        peer.write_all("охлаждение 91\n".as_bytes()).unwrap();
+        assert!(session.service_car());
+        assert!(session.ecu.linked);
+        assert_eq!(session.ecu.coolant_c, Some(91));
+        drop(session);
+        assert!(!path.exists());
     }
 
     #[test]
