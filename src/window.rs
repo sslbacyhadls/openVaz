@@ -1,10 +1,11 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 use crate::layout::Viewport;
@@ -21,6 +22,7 @@ pub fn run(session: Session) {
         context: None,
         surface: None,
         pointer: None,
+        next_service: Instant::now(),
     };
     event_loop.run_app(&mut app).expect("окно");
 }
@@ -33,6 +35,7 @@ struct App {
     context: Option<softbuffer::Context<Arc<Window>>>,
     surface: Option<softbuffer::Surface<Arc<Window>, Arc<Window>>>,
     pointer: Option<(f32, f32)>,
+    next_service: Instant,
 }
 
 impl ApplicationHandler for App {
@@ -55,6 +58,19 @@ impl ApplicationHandler for App {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if now >= self.next_service {
+            self.next_service = now + Duration::from_millis(20);
+            if self.session.service_car() {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_service));
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
