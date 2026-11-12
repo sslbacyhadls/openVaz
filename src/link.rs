@@ -12,6 +12,9 @@ pub enum CarMessage {
     Coolant(i32),
     Errors(Vec<String>),
     Clutch(bool),
+    Firmware(String),
+    Calibration(String),
+    Reading(String, f32),
 }
 
 pub fn car_path() -> PathBuf {
@@ -114,6 +117,31 @@ pub fn parse_car_line(line: &str) -> Option<CarMessage> {
             "0" => Some(CarMessage::Clutch(false)),
             _ => None,
         },
+        "прошивка" => {
+            let id = parts.next()?.to_string();
+            if id.is_empty() {
+                None
+            } else {
+                Some(CarMessage::Firmware(id))
+            }
+        }
+        "калибровка" => {
+            let text = parts.collect::<Vec<_>>().join(" ");
+            if text.is_empty() {
+                None
+            } else {
+                Some(CarMessage::Calibration(text))
+            }
+        }
+        "показание" => {
+            let key = parts.next()?.to_string();
+            let value = parts.next()?.parse::<f32>().ok()?;
+            if key.is_empty() || !value.is_finite() {
+                None
+            } else {
+                Some(CarMessage::Reading(key, value))
+            }
+        }
         _ => None,
     }
 }
@@ -150,5 +178,18 @@ mod tests {
         assert_eq!(parse_car_line("муфта 1"), Some(CarMessage::Clutch(true)));
         assert_eq!(parse_car_line("муфта 0"), Some(CarMessage::Clutch(false)));
         assert!(parse_car_line("муфта да").is_none());
+        assert_eq!(
+            parse_car_line("прошивка итэлма-м74"),
+            Some(CarMessage::Firmware("итэлма-м74".into()))
+        );
+        assert_eq!(
+            parse_car_line("калибровка I444CE08"),
+            Some(CarMessage::Calibration("I444CE08".into()))
+        );
+        assert_eq!(
+            parse_car_line("показание обороты 860"),
+            Some(CarMessage::Reading("обороты".into(), 860.0))
+        );
+        assert!(parse_car_line("показание обороты нет").is_none());
     }
 }

@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::firmware;
 use crate::link::{CarMessage, CarPort, LINK_TIMEOUT};
 
 pub const PROFILE_ID: &str = "kalina";
@@ -251,6 +252,9 @@ pub struct EcuView {
     pub coolant_c: Option<i32>,
     pub errors: Vec<String>,
     pub clutch: Option<bool>,
+    pub firmware: String,
+    pub calibration: String,
+    pub readings: Vec<(String, f32)>,
     pub linked: bool,
     heard: Option<Instant>,
 }
@@ -261,6 +265,9 @@ impl Default for EcuView {
             coolant_c: None,
             errors: Vec::new(),
             clutch: None,
+            firmware: String::new(),
+            calibration: String::new(),
+            readings: Vec::new(),
             linked: false,
             heard: None,
         }
@@ -283,8 +290,45 @@ impl EcuView {
                 }
             }
             CarMessage::Clutch(on) => self.clutch.replace(*on) != Some(*on),
+            CarMessage::Firmware(id) => {
+                if self.firmware == *id {
+                    false
+                } else {
+                    self.firmware.clone_from(id);
+                    self.calibration.clear();
+                    self.readings.clear();
+                    true
+                }
+            }
+            CarMessage::Calibration(text) => {
+                if self.calibration == *text {
+                    false
+                } else {
+                    self.calibration.clone_from(text);
+                    true
+                }
+            }
+            CarMessage::Reading(key, value) => self.store_reading(key, *value),
         };
         link_changed || data_changed
+    }
+
+    fn store_reading(&mut self, key: &str, value: f32) -> bool {
+        let Some(firmware) = firmware::find(&self.firmware) else {
+            return false;
+        };
+        let Some(channel) = firmware.channel(key) else {
+            return false;
+        };
+        let shown = firmware::format_value(channel, value);
+        if let Some(slot) = self.readings.iter_mut().find(|(stored, _)| stored == key) {
+            let previous = firmware::format_value(channel, slot.1);
+            slot.1 = value;
+            previous != shown
+        } else {
+            self.readings.push((key.to_string(), value));
+            true
+        }
     }
 
     pub fn refresh_link(&mut self) -> bool {
@@ -295,6 +339,14 @@ impl EcuView {
             return false;
         }
         self.linked = linked;
+        if !linked {
+            self.coolant_c = None;
+            self.errors.clear();
+            self.clutch = None;
+            self.firmware.clear();
+            self.calibration.clear();
+            self.readings.clear();
+        }
         true
     }
 }
@@ -527,6 +579,13 @@ impl Session {
                     self.journal
                         .line(&format!("эбу муфта {}", if *on { 1 } else { 0 }));
                 }
+                CarMessage::Firmware(id) => {
+                    self.journal.line(&format!("эбу прошивка {id}"));
+                }
+                CarMessage::Calibration(text) => {
+                    self.journal.line(&format!("эбу калибровка {text}"));
+                }
+                CarMessage::Reading(_, _) => {}
             }
         }
         changed
@@ -692,5 +751,23 @@ mod tests {
             true
         );
         assert_eq!(ecu.errors, vec!["P0217".to_string()]);
+    }
+
+    #[test]
+    fn a_reading_is_kept_only_when_the_firmware_has_that_key() {
+        let mut ecu = EcuView::default();
+        assert!(ecu.apply(&CarMessage::Coolant(40)));
+        assert!(!ecu.apply(&CarMessage::Reading("кислород2".into(), 0.6)));
+        assert!(ecu.readings.is_empty());
+        assert!(ecu.apply(&CarMessage::Firmware("итэлма-м74".into())));
+        assert!(ecu.apply(&CarMessage::Reading("кислород2".into(), 0.68)));
+        assert_eq!(ecu.readings.len(), 1);
+        assert!(ecu.apply(&CarMessage::Firmware("январь-7.2".into())));
+        assert!(ecu.readings.is_empty());
+        assert!(!ecu.apply(&CarMessage::Reading("кислород2".into(), 0.68)));
+        assert!(ecu.readings.is_empty());
+        ecu.heard = Instant::now().checked_sub(Duration::from_secs(4));
+        assert!(ecu.refresh_link());
+        assert!(ecu.firmware.is_empty());
     }
 }
