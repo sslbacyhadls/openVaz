@@ -21,6 +21,32 @@
 cargo fetch
 ```
 
+## Окна в Wayland и X11
+
+Панель на хосте и окно автомобиля поддерживают оба протокола. Оконная библиотека winit
+выбирает Wayland, если задан `WAYLAND_DISPLAY` или `WAYLAND_SOCKET`, в том числе когда
+одновременно задан `DISPLAY` для Xwayland. В обычном X11-сеансе используется `DISPLAY`.
+Ручной выбор при обычном запуске не нужен:
+
+```sh
+cargo run --release --bin openvaz
+emu/car.sh
+```
+
+После обновления зависимостей один раз выполните `cargo fetch`, поскольку `emu/car.sh`
+собирает с `--offline`. Если Wayland переменные заданы, но сервер недоступен, запуск
+завершится ошибкой: автоматический выбор не скрывает неисправное подключение.
+
+Для проверки X11 в Wayland-сеансе можно убрать Wayland-переменные только у запускаемой программы:
+
+```sh
+env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET cargo run --release --bin openvaz
+```
+
+На Linux для сборки окон нужны pkg-config, библиотеки X11/Wayland и xkbcommon.
+На Ubuntu/Debian пакет Wayland — `libwayland-dev`. Сборка `--no-default-features`
+для framebuffer и QEMU не включает оконные библиотеки.
+
 ## Собрать диск
 
 Один раз и заново после изменений панели или сценария загрузки:
