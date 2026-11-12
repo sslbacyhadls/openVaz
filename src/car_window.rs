@@ -35,6 +35,7 @@ pub fn run(vehicle: Vehicle, socket: PathBuf) {
         pointer: None,
         mouse_down: false,
         hold: Hold::default(),
+        next_frame: Instant::now(),
         last_tick: Instant::now(),
         last_send: Instant::now() - Duration::from_secs(1),
     };
@@ -53,6 +54,7 @@ struct DashApp {
     pointer: Option<(f32, f32)>,
     mouse_down: bool,
     hold: Hold,
+    next_frame: Instant,
     last_tick: Instant,
     last_send: Instant,
 }
@@ -100,11 +102,12 @@ impl ApplicationHandler for DashApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let started = Instant::now();
-        self.step();
-        self.draw();
-        let next = (started + FRAME).max(Instant::now());
-        event_loop.set_control_flow(ControlFlow::WaitUntil(next));
+        if frame_due(&mut self.next_frame, Instant::now()) {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -122,7 +125,10 @@ impl ApplicationHandler for DashApp {
                     );
                 }
             }
-            WindowEvent::RedrawRequested => self.draw(),
+            WindowEvent::RedrawRequested => {
+                self.step();
+                self.draw();
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
             }
@@ -398,5 +404,36 @@ fn fit_origin(dst_w: u32, dst_h: u32) -> Viewport {
         scale,
         ox: (dw - DASH_W * scale) * 0.5,
         oy: (dh - DASH_H * scale) * 0.5,
+    }
+}
+
+// X11 events can wake the loop before its timer; they must not start another frame.
+fn frame_due(next: &mut Instant, now: Instant) -> bool {
+    if now < *next {
+        return false;
+    }
+    *next = now + FRAME;
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn early_window_events_do_not_render_frames_or_delay_the_deadline() {
+        let start = Instant::now();
+        let mut next = start;
+        assert!(frame_due(&mut next, start));
+        for offset in 0..1000 {
+            assert!(!frame_due(&mut next, start + FRAME * offset / 1000));
+            assert_eq!(next, start + FRAME);
+        }
+        assert!(frame_due(&mut next, start + FRAME));
+        // A stalled renderer schedules one fresh frame, without replaying old frames.
+        let late = start + FRAME * 100;
+        assert!(frame_due(&mut next, late));
+        assert_eq!(next, late + FRAME);
+        assert!(!frame_due(&mut next, late));
     }
 }
