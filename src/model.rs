@@ -262,7 +262,11 @@ fn event(channel: &'static str, value: f32) -> OutputEvent {
 }
 
 fn bool_value(on: bool) -> f32 {
-    if on { 1.0 } else { 0.0 }
+    if on {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 fn parse_bool(value: &str) -> bool {
@@ -346,6 +350,7 @@ pub struct Session {
     blocked: [bool; 5],
 }
 
+#[derive(Default)]
 pub struct EcuView {
     pub coolant_c: Option<i32>,
     pub errors: Vec<String>,
@@ -359,25 +364,6 @@ pub struct EcuView {
     pub pedals: Option<(f32, f32, f32)>,
     pub linked: bool,
     heard: Option<Instant>,
-}
-
-impl Default for EcuView {
-    fn default() -> Self {
-        Self {
-            coolant_c: None,
-            errors: Vec::new(),
-            clutch: None,
-            firmware: String::new(),
-            calibration: String::new(),
-            readings: Vec::new(),
-            cabin_c: None,
-            motor: String::new(),
-            gear: String::new(),
-            pedals: None,
-            linked: false,
-            heard: None,
-        }
-    }
 }
 
 impl EcuView {
@@ -826,8 +812,7 @@ impl Session {
                     self.journal.line("эбу ошибки нет");
                 }
                 CarMessage::Errors(list) => {
-                    self.journal
-                        .line(&format!("эбу ошибки {}", list.join(" ")));
+                    self.journal.line(&format!("эбу ошибки {}", list.join(" ")));
                 }
                 CarMessage::Clutch(on) => {
                     self.journal
@@ -941,9 +926,11 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings");
-        let mut climate = Climate::default();
-        climate.face = true;
-        climate.temperature = 0.2;
+        let mut climate = Climate {
+            face: true,
+            temperature: 0.2,
+            ..Climate::default()
+        };
         let events = climate.toggle_air_conditioner();
         assert_eq!(events[0].channel, "вентилятор");
         assert_eq!(events[0].value, MIN_FAN);
@@ -1063,10 +1050,7 @@ mod tests {
         ecu.heard = Instant::now().checked_sub(Duration::from_secs(4));
         assert!(ecu.refresh_link());
         assert!(!ecu.linked);
-        assert_eq!(
-            ecu.apply(&CarMessage::Errors(vec!["P0217".into()])),
-            true
-        );
+        assert!(ecu.apply(&CarMessage::Errors(vec!["P0217".into()])));
         assert_eq!(ecu.errors, vec!["P0217".to_string()]);
         ecu.cabin_c = Some(21.0);
         ecu.motor = "работает".into();

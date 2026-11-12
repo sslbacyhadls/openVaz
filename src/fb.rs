@@ -104,10 +104,7 @@ pub fn run(path: &str, mut session: Session) {
     try_mode(&mut var, fd);
     let fix = read_fix(fd);
     if var.bits_per_pixel != 32 {
-        eprintln!(
-            "openvaz: глубина цвета {}, нужна 32",
-            var.bits_per_pixel
-        );
+        eprintln!("openvaz: глубина цвета {}, нужна 32", var.bits_per_pixel);
         std::process::exit(1);
     }
     let width = var.xres;
@@ -179,7 +176,13 @@ fn try_mode(info: &mut FbVarScreeninfo, fd: i32) {
     info.yres = height;
     info.xres_virtual = info.xres_virtual.max(width);
     info.yres_virtual = info.yres_virtual.max(height);
-    let rc = unsafe { libc::ioctl(fd, ioctl_req(FBIOPUT_VSCREENINFO), info as *mut FbVarScreeninfo) };
+    let rc = unsafe {
+        libc::ioctl(
+            fd,
+            ioctl_req(FBIOPUT_VSCREENINFO),
+            info as *mut FbVarScreeninfo,
+        )
+    };
     if rc < 0 {
         *info = read_var(fd);
         eprintln!(
@@ -265,7 +268,11 @@ fn abs_range(fd: i32, axis: u16) -> Option<(i32, i32)> {
         flat: 0,
         resolution: 0,
     };
-    let request = ior(b'E', 0x40 + axis as u32, std::mem::size_of::<AbsInfo>() as u32);
+    let request = ior(
+        b'E',
+        0x40 + axis as u32,
+        std::mem::size_of::<AbsInfo>() as u32,
+    );
     let rc = unsafe { libc::ioctl(fd, ioctl_req(request), &mut info) };
     if rc < 0 || info.maximum <= info.minimum {
         None
@@ -403,4 +410,3 @@ fn blit(
         }
     }
 }
-

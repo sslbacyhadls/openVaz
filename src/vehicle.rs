@@ -62,7 +62,8 @@ impl Vehicle {
     pub fn tick(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 1.0);
         for index in 0..5 {
-            self.position[index] = slew(self.position[index], self.target[index], SERVO_PER_SEC * dt);
+            self.position[index] =
+                slew(self.position[index], self.target[index], SERVO_PER_SEC * dt);
         }
         self.fan = slew(self.fan, self.fan_cmd, FAN_PER_SEC * dt);
         let goal = if self.engine.driver().ignition {

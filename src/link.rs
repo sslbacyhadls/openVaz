@@ -225,8 +225,14 @@ mod tests {
         assert_eq!(channel, "вентилятор");
         assert!((value - 0.25).abs() < 0.001);
         assert!(parse_panel_line("старт").is_none());
-        assert_eq!(parse_car_line("охлаждение 90"), Some(CarMessage::Coolant(90)));
-        assert_eq!(parse_car_line("ошибки нет"), Some(CarMessage::Errors(vec![])));
+        assert_eq!(
+            parse_car_line("охлаждение 90"),
+            Some(CarMessage::Coolant(90))
+        );
+        assert_eq!(
+            parse_car_line("ошибки нет"),
+            Some(CarMessage::Errors(vec![]))
+        );
         assert_eq!(
             parse_car_line("ошибки P0217"),
             Some(CarMessage::Errors(vec!["P0217".into()]))

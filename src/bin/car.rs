@@ -270,7 +270,7 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream, keyboard: bool) {
         }
         if last_status.elapsed() >= Duration::from_millis(200) {
             for line in vehicle.status_lines() {
-                if write!(stream, "{line}\n").is_err() {
+                if writeln!(stream, "{line}").is_err() {
                     return;
                 }
             }
@@ -334,20 +334,21 @@ fn draw(vehicle: &Vehicle, shown: &mut String, keyboard: bool) {
         if driver.ignition { "вкл" } else { "выкл" }
     )));
     frame.push('\n');
-    for index in 0..5 {
+    for (index, name) in DAMPERS.iter().enumerate() {
         let command = vehicle.damper_command(index);
         let position = vehicle.damper_position(index);
-        let mut line = format!(
-            "{:<14} команда {command:.2}   положение {position:.2}",
-            DAMPERS[index]
-        );
+        let mut line = format!("{name:<14} команда {command:.2}   положение {position:.2}");
         if index == 1 {
             line.push_str(&format!("   задание {} °C", celsius_from_unit(command)));
         }
         frame.push_str(&fit(&line));
         frame.push('\n');
     }
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
     frame.push_str(&fit(&format!(
         "вентилятор     команда {:.2}   факт {:.2}",
@@ -391,7 +392,11 @@ fn motor_label(motor: Motor) -> &'static str {
 fn compact(vehicle: &Vehicle) -> String {
     let engine = vehicle.engine();
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     format!(
         "{}  {} {} об/мин  {} км/ч  передача {}  охлаждение {} °C  задание {} °C  заслонка {:.2}  муфта {clutch}  запрос {request}  вентилятор {:.2}  ошибки {}",
         vehicle.firmware().id,

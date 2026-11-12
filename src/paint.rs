@@ -96,7 +96,16 @@ pub fn write_ppm(path: &Path, pixmap: &Pixmap) -> io::Result<()> {
 }
 
 fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ecu: &EcuView) {
-    text(pixmap, fonts, 24.0, 64.0, 36.0, true, color(0xf4, 0xf1, 0xea), "Климат");
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        64.0,
+        36.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        "Климат",
+    );
     let profile_w = fonts.width(PROFILE_TITLE, 24.0, false);
     text(
         pixmap,
@@ -154,7 +163,16 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ec
     let track = layout::slider_track();
     let cold = format!("{TEMP_MIN_C}°");
     let hot = format!("{TEMP_MAX_C}°");
-    text(pixmap, fonts, 24.0, track.y + 16.0, 24.0, false, color(0x7e, 0xb6, 0xd9), &cold);
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        track.y + 16.0,
+        24.0,
+        false,
+        color(0x7e, 0xb6, 0xd9),
+        &cold,
+    );
     text(
         pixmap,
         fonts,
@@ -179,7 +197,13 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ec
         7.0,
         color(0xe0, 0x70, 0x50),
     );
-    fill_circle(pixmap, knob_x, track.y + track.h * 0.5, 20.0, color(0xf4, 0xf1, 0xea));
+    fill_circle(
+        pixmap,
+        knob_x,
+        track.y + track.h * 0.5,
+        20.0,
+        color(0xf4, 0xf1, 0xea),
+    );
     let degrees = format!("{}°", celsius_from_unit(climate.temperature));
     let degrees_w = fonts.width(&degrees, 22.0, true);
     text(
@@ -210,7 +234,16 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ec
         };
         button(pixmap, rect, on, active, hit);
     }
-    text(pixmap, fonts, 472.0, 324.0, 26.0, false, color(0x9a, 0xa3, 0xad), "Вентилятор");
+    text(
+        pixmap,
+        fonts,
+        472.0,
+        324.0,
+        26.0,
+        false,
+        color(0x9a, 0xa3, 0xad),
+        "Вентилятор",
+    );
     for (hit, rect) in layout::fan_buttons() {
         let Hit::Fan(speed) = hit else { continue };
         let on = (climate.fan - speed as f32 * MIN_FAN).abs() < 0.001;
@@ -220,21 +253,42 @@ fn draw_climate(pixmap: &mut Pixmap, fonts: &mut Typeface, climate: &Climate, ec
             (color(0x1c, 0x24, 0x30), color(0xf4, 0xf1, 0xea))
         };
         fill_rect(pixmap, rect, 16.0, fill);
-        let label = if speed == 0 { "Выкл".to_string() } else { speed.to_string() };
+        let label = if speed == 0 {
+            "Выкл".to_string()
+        } else {
+            speed.to_string()
+        };
         let size = if speed == 0 { 24.0 } else { 32.0 };
         let width = fonts.width(&label, size, true);
-        text(pixmap, fonts, rect.x + (rect.w - width) * 0.5, rect.y + 60.0, size, true, ink, &label);
+        text(
+            pixmap,
+            fonts,
+            rect.x + (rect.w - width) * 0.5,
+            rect.y + 60.0,
+            size,
+            true,
+            ink,
+            &label,
+        );
     }
     hint(pixmap, fonts, "Проведите пальцем влево — показания ЭБУ");
 }
 
 fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
-    text(pixmap, fonts, 24.0, 64.0, 36.0, true, color(0xf4, 0xf1, 0xea), "ЭБУ");
+    text(
+        pixmap,
+        fonts,
+        24.0,
+        64.0,
+        36.0,
+        true,
+        color(0xf4, 0xf1, 0xea),
+        "ЭБУ",
+    );
     let (coolant, coolant_color) = match ecu.coolant_c {
-        Some(degrees) if ecu.linked && degrees >= 105 => (
-            format!("{degrees} °C"),
-            color(0xd4, 0x55, 0x4a),
-        ),
+        Some(degrees) if ecu.linked && degrees >= 105 => {
+            (format!("{degrees} °C"), color(0xd4, 0x55, 0x4a))
+        }
         Some(degrees) if ecu.linked => (format!("{degrees} °C"), color(0xf4, 0xf1, 0xea)),
         _ => ("нет данных".to_string(), color(0x9a, 0xa3, 0xad)),
     };
@@ -254,7 +308,15 @@ fn draw_ecu(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
         &coolant,
         coolant_color,
     );
-    card(pixmap, fonts, 24.0, 284.0, "Коды ошибок", &errors, error_color);
+    card(
+        pixmap,
+        fonts,
+        24.0,
+        284.0,
+        "Коды ошибок",
+        &errors,
+        error_color,
+    );
     if ecu.linked {
         let clutch = match ecu.clutch {
             Some(true) => "Муфта кондиционера включена",
@@ -469,7 +531,15 @@ fn draw_drive(pixmap: &mut Pixmap, fonts: &mut Typeface, ecu: &EcuView) {
     hint(pixmap, fonts, "Проведите пальцем влево — климат");
 }
 
-fn card(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, y: f32, title: &str, value: &str, value_color: Color) {
+fn card(
+    pixmap: &mut Pixmap,
+    fonts: &mut Typeface,
+    x: f32,
+    y: f32,
+    title: &str,
+    value: &str,
+    value_color: Color,
+) {
     let rect = Rect {
         x,
         y,
@@ -477,16 +547,41 @@ fn card(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, y: f32, title: &str, 
         h: 144.0,
     };
     fill_rect(pixmap, rect, 18.0, color(0x1c, 0x24, 0x30));
-    text(pixmap, fonts, x + 24.0, y + 44.0, 26.0, false, color(0x9a, 0xa3, 0xad), title);
-    text(pixmap, fonts, x + 24.0, y + 108.0, 36.0, true, value_color, value);
+    text(
+        pixmap,
+        fonts,
+        x + 24.0,
+        y + 44.0,
+        26.0,
+        false,
+        color(0x9a, 0xa3, 0xad),
+        title,
+    );
+    text(
+        pixmap,
+        fonts,
+        x + 24.0,
+        y + 108.0,
+        36.0,
+        true,
+        value_color,
+        value,
+    );
 }
 
 fn button(pixmap: &mut Pixmap, rect: Rect, on: bool, active: Color, hit: Hit) {
     let fill = if on { active } else { color(0x1c, 0x24, 0x30) };
-    let ink = if on { color(0x12, 0x16, 0x1c) } else { color(0xf4, 0xf1, 0xea) };
+    let ink = if on {
+        color(0x12, 0x16, 0x1c)
+    } else {
+        color(0xf4, 0xf1, 0xea)
+    };
     fill_rect(pixmap, rect, 22.0, fill);
     let size = 62.0;
-    let origin = (rect.x + (rect.w - size) * 0.5, rect.y + (rect.h - size) * 0.5);
+    let origin = (
+        rect.x + (rect.w - size) * 0.5,
+        rect.y + (rect.h - size) * 0.5,
+    );
     match hit {
         Hit::Face => icon_face(pixmap, origin, size, ink),
         Hit::Feet => icon_feet(pixmap, origin, size, ink),
@@ -550,7 +645,12 @@ fn icon_glass(pixmap: &mut Pixmap, origin: (f32, f32), size: f32, ink: Color) {
     let s = size / 78.0;
     let px = |u: f32, v: f32| (x + u * s, y + v * s);
     let outer = [px(16.0, 8.0), px(62.0, 8.0), px(72.0, 68.0), px(6.0, 68.0)];
-    let inner = [px(24.0, 16.0), px(54.0, 16.0), px(62.0, 60.0), px(16.0, 60.0)];
+    let inner = [
+        px(24.0, 16.0),
+        px(54.0, 16.0),
+        px(62.0, 60.0),
+        px(16.0, 60.0),
+    ];
     fill_even_odd(pixmap, &[outer, inner], ink);
     for row in [30.0, 42.0, 54.0] {
         wave(pixmap, px(22.0, row), px(56.0, row), 3.5 * s, 3.2 * s, ink);
@@ -592,7 +692,10 @@ fn icon_snowflake(pixmap: &mut Pixmap, origin: (f32, f32), size: f32, ink: Color
             thick_line(
                 pixmap,
                 base,
-                (base.0 + branch.cos() * 10.0 * s, base.1 + branch.sin() * 10.0 * s),
+                (
+                    base.0 + branch.cos() * 10.0 * s,
+                    base.1 + branch.sin() * 10.0 * s,
+                ),
                 3.2 * s,
                 ink,
             );
@@ -650,7 +753,17 @@ fn draw_dots(pixmap: &mut Pixmap, screen: Screen) {
     }
 }
 
-fn text(pixmap: &mut Pixmap, fonts: &mut Typeface, x: f32, baseline: f32, size: f32, bold: bool, color: Color, label: &str) {
+#[allow(clippy::too_many_arguments)]
+fn text(
+    pixmap: &mut Pixmap,
+    fonts: &mut Typeface,
+    x: f32,
+    baseline: f32,
+    size: f32,
+    bold: bool,
+    color: Color,
+    label: &str,
+) {
     let mut cursor = x;
     for ch in label.chars() {
         let glyph = fonts.glyph(ch, size, bold);
@@ -722,8 +835,14 @@ fn arrow_head(pixmap: &mut Pixmap, tip: (f32, f32), dir: (f32, f32), size: f32, 
         pixmap,
         &[
             tip,
-            (tip.0 - dx * size + -dy * size * 0.48, tip.1 - dy * size + dx * size * 0.48),
-            (tip.0 - dx * size - -dy * size * 0.48, tip.1 - dy * size - dx * size * 0.48),
+            (
+                tip.0 - dx * size + -dy * size * 0.48,
+                tip.1 - dy * size + dx * size * 0.48,
+            ),
+            (
+                tip.0 - dx * size - -dy * size * 0.48,
+                tip.1 - dy * size - dx * size * 0.48,
+            ),
         ],
         ink,
     );
@@ -742,7 +861,10 @@ fn ring_arc(
     let mut path = PathBuilder::new();
     for index in 0..=steps {
         let angle = start + (end - start) * index as f32 / steps as f32;
-        let point = (center.0 + outer * angle.cos(), center.1 + outer * angle.sin());
+        let point = (
+            center.0 + outer * angle.cos(),
+            center.1 + outer * angle.sin(),
+        );
         if index == 0 {
             path.move_to(point.0, point.1);
         } else {
@@ -751,14 +873,24 @@ fn ring_arc(
     }
     for index in (0..=steps).rev() {
         let angle = start + (end - start) * index as f32 / steps as f32;
-        let point = (center.0 + inner * angle.cos(), center.1 + inner * angle.sin());
+        let point = (
+            center.0 + inner * angle.cos(),
+            center.1 + inner * angle.sin(),
+        );
         path.line_to(point.0, point.1);
     }
     path.close();
     fill_path(pixmap, path.finish().unwrap(), ink, FillRule::Winding);
 }
 
-fn wave(pixmap: &mut Pixmap, start: (f32, f32), end: (f32, f32), amplitude: f32, thickness: f32, ink: Color) {
+fn wave(
+    pixmap: &mut Pixmap,
+    start: (f32, f32),
+    end: (f32, f32),
+    amplitude: f32,
+    thickness: f32,
+    ink: Color,
+) {
     let steps = 16;
     let mut points = Vec::with_capacity(steps + 1);
     for index in 0..=steps {
@@ -805,14 +937,26 @@ fn fill_rect(pixmap: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
     let mut paint = Paint::default();
     paint.set_color(color);
     let path = rounded(rect, radius);
-    pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn fill_circle(pixmap: &mut Pixmap, cx: f32, cy: f32, radius: f32, color: Color) {
     let mut paint = Paint::default();
     paint.set_color(color);
     let path = PathBuilder::from_circle(cx, cy, radius).unwrap();
-    pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn rounded(rect: Rect, radius: f32) -> tiny_skia::Path {
