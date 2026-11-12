@@ -12,8 +12,8 @@ window = ["dep:winit", "dep:softbuffer"]
 fontdue = "0.9"
 libc = "0.2"
 tiny-skia = "0.11"
-softbuffer = { version = "0.4", optional = true, default-features = false, features = ["x11"] }
-winit = { version = "0.30", optional = true, default-features = false, features = ["x11", "rwh_06"] }
+softbuffer = { version = "0.4", optional = true, default-features = false, features = ["x11", "wayland", "wayland-dlopen"] }
+winit = { version = "0.30", optional = true }
 
 [[bin]]
 name = "openvaz"

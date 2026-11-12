@@ -188,6 +188,7 @@ impl App {
                     (blue as u32) | ((green as u32) << 8) | ((red as u32) << 16);
             }
         }
+        window.pre_present_notify();
         let _ = buffer.present();
     }
 }

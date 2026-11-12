@@ -351,6 +351,7 @@ impl DashApp {
             Err(_) => return,
         };
         blit(&mut buffer, width, height, &pixmap, view);
+        window.pre_present_notify();
         let _ = buffer.present();
     }
 }
