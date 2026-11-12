@@ -6,6 +6,11 @@ use crate::firmware::Firmware;
 const WHEEL_RADIUS: f32 = 0.289;
 const MASS: f32 = 1150.0;
 const FINAL_DRIVE: f32 = 3.7;
+/// Качение и воздух, м/с². На низших передачах тяга доходит до отсечки.
+const ROLLING_ACCEL: f32 = 0.15;
+const AERO_PER_SPEED2: f32 = 0.00038;
+/// На сколько оборотов ниже отсечки момент ещё полный. Дальше он сходит к нулю.
+const LIMIT_BAND: f32 = 250.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gear {
@@ -226,18 +231,28 @@ impl Engine {
             Motor::Running => {
                 let free = self.free_rpm();
                 let ratio = self.driver.gear.ratio();
-                let locked = (1.0 - self.driver.clutch).clamp(0.0, 1.0).powf(1.4);
+                let locked = clutch_lock(self.driver.clutch);
+                let road = rpm_from_speed(self.speed_kmh, ratio);
+                // Пока колёса медленнее холостого хода, а педаль газа нажата, сцепление буксует:
+                // мотор остаётся на оборотах трогания, а не падает в ноль вместе с коробкой.
+                let launch = free.clamp(self.firmware.idle_rpm, 1800.0);
+                let coupled = if self.driver.gas > 0.15 {
+                    road.max(launch)
+                } else {
+                    road
+                }
+                .min(self.firmware.rev_limit);
                 let target = if ratio == 0.0 {
                     free
                 } else {
-                    let road = rpm_from_speed(self.speed_kmh, ratio);
-                    free * (1.0 - locked) + road * locked
+                    free * (1.0 - locked) + coupled * locked
                 };
-                self.rpm = approach(self.rpm, target.min(self.firmware.rev_limit), 2200.0 * dt);
+                self.rpm = approach(self.rpm, target.min(self.firmware.rev_limit), 12_000.0 * dt);
                 let dropped = ratio != 0.0
                     && self.driver.clutch < 0.15
                     && self.speed_kmh.abs() < 2.0
                     && self.rpm < 520.0
+                    && self.driver.gas < 0.2
                     && self.throttle < 0.35;
                 if dropped {
                     self.motor = Motor::Stalled;
@@ -248,37 +263,49 @@ impl Engine {
 
     fn update_speed(&mut self, dt: f32, ac_load: bool) {
         let ratio = self.driver.gear.ratio();
-        let slip = (1.0 - self.driver.clutch).clamp(0.0, 1.0);
+        let locked = clutch_lock(self.driver.clutch);
         let mut accel = 0.0;
-        if self.motor == Motor::Running
-            && ratio != 0.0
-            && slip > 0.05
-            && self.rpm < self.firmware.rev_limit - 50.0
-        {
-            let load = (self.throttle * 0.85 + 0.08).min(1.0);
-            let mut torque = self.firmware.peak_nm * load * slip;
-            if ac_load {
-                torque = (torque - 8.0).max(0.0);
-            }
-            let sign = if matches!(self.driver.gear, Gear::Reverse) {
-                -1.0
-            } else {
-                1.0
-            };
-            accel += sign * torque * ratio * FINAL_DRIVE / WHEEL_RADIUS / MASS;
-        }
-        let speed_ms = self.speed_kmh / 3.6;
-        let drag = 0.12 * speed_ms + 0.04 * speed_ms.abs() * speed_ms;
-        let brake = self.driver.brake.clamp(0.0, 1.0) * 7.0 * self.speed_kmh.signum();
-        if self.speed_kmh.abs() < 0.2 {
-            accel -= brake;
+        let sign = if matches!(self.driver.gear, Gear::Reverse) {
+            -1.0
         } else {
-            accel -= drag + brake;
+            1.0
+        };
+        if self.motor == Motor::Running && ratio != 0.0 && locked > 0.05 {
+            let road = rpm_from_speed(self.speed_kmh, ratio);
+            let headroom = ((self.firmware.rev_limit - road) / LIMIT_BAND).clamp(0.0, 1.0);
+            if self.throttle >= 0.02 {
+                let mut torque = self.drive_torque() * locked * headroom;
+                if ac_load {
+                    torque = (torque - 8.0).max(0.0);
+                }
+                accel += sign * wheel_accel(torque, ratio);
+            }
+            if self.throttle < 0.12 {
+                let braking = (1.0 - self.throttle / 0.12) * 25.0 * locked;
+                accel -= sign * wheel_accel(braking, ratio);
+            }
         }
+        let along = travel_sign(self.speed_kmh);
+        if along != 0.0 {
+            let speed_ms = self.speed_kmh / 3.6;
+            accel -= ROLLING_ACCEL * along + AERO_PER_SPEED2 * speed_ms.abs() * speed_ms;
+        }
+        accel -= self.driver.brake.clamp(0.0, 1.0) * 7.0 * along;
         self.speed_kmh += accel * dt * 3.6;
         if self.driver.brake > 0.2 && self.speed_kmh.abs() < 0.4 {
             self.speed_kmh = 0.0;
         }
+    }
+
+    fn drive_torque(&self) -> f32 {
+        let kilo = (self.rpm.max(0.0) / 1000.0).min(6.5);
+        let shape = if kilo < 1.2 {
+            0.35 + 0.45 * (kilo / 1.2)
+        } else {
+            (1.0 - (kilo - 3.5).abs() / 5.5).clamp(0.62, 1.0)
+        };
+        let load = (self.throttle * 0.92 + 0.08).min(1.0);
+        self.firmware.peak_nm * shape * load
     }
 
     fn free_rpm(&self) -> f32 {
@@ -346,6 +373,22 @@ impl Engine {
     }
 }
 
+fn clutch_lock(pedal: f32) -> f32 {
+    (1.0 - pedal.clamp(0.0, 1.0)).powf(1.4)
+}
+
+fn wheel_accel(torque_nm: f32, ratio: f32) -> f32 {
+    torque_nm * ratio * FINAL_DRIVE / WHEEL_RADIUS / MASS
+}
+
+fn travel_sign(speed_kmh: f32) -> f32 {
+    if speed_kmh.abs() < 0.05 {
+        0.0
+    } else {
+        speed_kmh.signum()
+    }
+}
+
 fn rpm_from_speed(speed_kmh: f32, ratio: f32) -> f32 {
     let wheel_rpm = speed_kmh.abs() / 3.6 / (2.0 * std::f32::consts::PI * WHEEL_RADIUS) * 60.0;
     wheel_rpm * ratio * FINAL_DRIVE
@@ -403,6 +446,37 @@ mod tests {
         assert!(
             motor.speed_kmh().abs() < 1.0,
             "после тормоза {}",
+            motor.speed_kmh()
+        );
+    }
+
+    #[test]
+    fn second_gear_pulls_after_the_first_gear_limit() {
+        let mut motor = engine("итэлма-м74");
+        drive(&mut motor, 1.0, 0.0, 0.0, Gear::Forward(1), 12.0);
+        let limit = motor.firmware().rev_limit;
+        assert!(
+            motor.rpm() > limit - 200.0,
+            "первая передача {}",
+            motor.rpm()
+        );
+        let speed_at_limit = motor.speed_kmh();
+        drive(&mut motor, 1.0, 0.0, 0.0, Gear::Forward(2), 0.5);
+        assert!(
+            motor.rpm() < limit - 800.0,
+            "после переключения {}",
+            motor.rpm()
+        );
+        assert!(motor.speed_kmh() > speed_at_limit * 0.9);
+        drive(&mut motor, 1.0, 0.0, 0.0, Gear::Forward(2), 12.0);
+        assert!(
+            motor.rpm() > limit - 200.0,
+            "вторая передача {}",
+            motor.rpm()
+        );
+        assert!(
+            motor.speed_kmh() > speed_at_limit + 20.0,
+            "скорость {}",
             motor.speed_kmh()
         );
     }
