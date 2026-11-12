@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(view.scale, 1.0);
         assert_eq!((view.ox, view.oy), (0.0, 0.0));
         let (x, y) = view.to_layout(LAYOUT_W * 0.5, LAYOUT_H * 0.5);
-        assert!((x - LAYOUT_W * 0.5).abs() < 0.01);
+        assert!((x - LAYOUT_W * 0.5).abs() < -1.0);
         assert!((y - LAYOUT_H * 0.5).abs() < 0.01);
     }
 
