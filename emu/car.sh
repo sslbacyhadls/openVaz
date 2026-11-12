@@ -6,5 +6,5 @@ cd "$root"
 export PATH="$HOME/.cargo/bin:$PATH"
 mkdir -p "$root/emu/build"
 name=${1:-итэлма-м74}
-cargo build --offline --bin openvaz-car
-exec "$root/target/debug/openvaz-car" "$root/emu/build/car.sock" "$name"
+cargo build --release --offline --bin openvaz-car
+exec "$root/target/release/openvaz-car" "$root/emu/build/car.sock" "$name"

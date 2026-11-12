@@ -1,5 +1,6 @@
-use crate::engine::{Driver, Engine};
+use crate::engine::{Driver, Engine, Gear};
 use crate::firmware::{self, Firmware};
+use crate::link::DriverCommand;
 
 /// Исполнительные устройства автомобиля: заслонки догоняют команду,
 /// вентилятор раскручивается с запаздыванием, муфта кондиционера
@@ -17,6 +18,20 @@ pub struct Vehicle {
     pub error: Option<&'static str>,
     radiator_fan: bool,
     engine: Engine,
+    /// Команды «водитель …» с порта. Клавиатура и окно их не затирают, а складывают.
+    panel: Driver,
+    keys: KeyInput,
+}
+
+/// Удержание клавиш и мыши. Пустая передача значит «водитель передачу не выбирал».
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KeyInput {
+    pub gas: f32,
+    pub brake: f32,
+    pub clutch: f32,
+    pub gear: Option<Gear>,
+    pub ignition: Option<bool>,
+    pub crank: bool,
 }
 
 pub const DAMPERS: [&str; 5] = ["рециркуляция", "температура", "лицо", "ноги", "стекло"];
@@ -42,6 +57,8 @@ impl Vehicle {
             error: None,
             radiator_fan: false,
             engine: Engine::new(firmware),
+            panel: Driver::default(),
+            keys: KeyInput::default(),
         }
     }
 
@@ -122,6 +139,43 @@ impl Vehicle {
     }
 
     pub fn set_driver(&mut self, driver: Driver) {
+        self.keys = KeyInput {
+            gas: driver.gas,
+            brake: driver.brake,
+            clutch: driver.clutch,
+            gear: Some(driver.gear),
+            ignition: Some(driver.ignition),
+            crank: driver.crank,
+        };
+        self.push_driver();
+    }
+
+    pub fn set_keys(&mut self, keys: KeyInput) {
+        self.keys = keys;
+        self.push_driver();
+    }
+
+    pub fn apply_panel(&mut self, command: DriverCommand) {
+        match command {
+            DriverCommand::Gas(value) => self.panel.gas = value,
+            DriverCommand::Brake(value) => self.panel.brake = value,
+            DriverCommand::Clutch(value) => self.panel.clutch = value,
+            DriverCommand::Gear(code) => self.panel.gear = Gear::from_code(code),
+            DriverCommand::Ignition(on) => self.panel.ignition = on,
+            DriverCommand::Crank(on) => self.panel.crank = on,
+        }
+        self.push_driver();
+    }
+
+    fn push_driver(&mut self) {
+        let driver = Driver {
+            gas: self.panel.gas.max(self.keys.gas),
+            brake: self.panel.brake.max(self.keys.brake),
+            clutch: self.panel.clutch.max(self.keys.clutch),
+            gear: self.keys.gear.unwrap_or(self.panel.gear),
+            ignition: self.keys.ignition.unwrap_or(true) && self.panel.ignition,
+            crank: self.panel.crank || self.keys.crank,
+        };
         self.engine.set_driver(driver);
     }
 

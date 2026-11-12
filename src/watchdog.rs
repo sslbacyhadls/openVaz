@@ -6,7 +6,9 @@ use std::io::{self, Write};
 use std::os::fd::AsRawFd;
 
 /// `WDIOC_SETTIMEOUT`: `_IOWR('W', 6, int)`.
-pub const SET_TIMEOUT: libc::Ioctl = 0xC004_5706;
+/// На aarch64 `ioctl` принимает `i32`, и старший бит направления не влезает в положительный литерал.
+const SET_TIMEOUT_BITS: u32 = 0xC004_5706;
+pub const SET_TIMEOUT: libc::Ioctl = SET_TIMEOUT_BITS as libc::Ioctl;
 
 pub struct Watchdog {
     file: std::fs::File,

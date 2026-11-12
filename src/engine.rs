@@ -28,6 +28,26 @@ impl Gear {
         }
     }
 
+    pub fn from_code(code: i32) -> Self {
+        match code {
+            -1 => Gear::Reverse,
+            1 => Gear::Forward(1),
+            2 => Gear::Forward(2),
+            3 => Gear::Forward(3),
+            4 => Gear::Forward(4),
+            5 => Gear::Forward(5),
+            _ => Gear::Neutral,
+        }
+    }
+
+    pub fn code(self) -> i32 {
+        match self {
+            Gear::Reverse => -1,
+            Gear::Neutral => 0,
+            Gear::Forward(gear) => i32::from(gear),
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Gear::Neutral => "N",
@@ -50,6 +70,17 @@ pub enum Motor {
     Cranking,
     Running,
     Stalled,
+}
+
+impl Motor {
+    pub fn label(self) -> &'static str {
+        match self {
+            Motor::Off => "зажигание выключено",
+            Motor::Cranking => "стартер",
+            Motor::Running => "работает",
+            Motor::Stalled => "заглох",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

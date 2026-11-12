@@ -13,4 +13,6 @@ pub mod vehicle;
 pub mod watchdog;
 
 #[cfg(feature = "window")]
+pub mod car_window;
+#[cfg(feature = "window")]
 pub mod window;

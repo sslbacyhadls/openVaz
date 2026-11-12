@@ -6,10 +6,12 @@ use std::path::Path;
 use fontdue::{Font, FontSettings};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
 
+use crate::engine::Gear;
 use crate::layout::{self, Hit, Rect};
 use crate::model::{
     celsius_from_unit, Climate, EcuView, Screen, MIN_FAN, PROFILE_TITLE, TEMP_MAX_C, TEMP_MIN_C,
 };
+use crate::vehicle::Vehicle;
 
 const HEADER_SIZE: f32 = 32.0;
 const VALUE_SIZE: f32 = 72.0;
@@ -1079,6 +1081,436 @@ fn rounded(rect: Rect, radius: f32) -> tiny_skia::Path {
     path.finish().unwrap()
 }
 
+pub const DASH_W: f32 = 1200.0;
+pub const DASH_H: f32 = 760.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DashHit {
+    Gas,
+    Brake,
+    Clutch,
+    Gear(i32),
+    Ignition,
+    Starter,
+}
+
+pub fn render_dashboard(vehicle: &Vehicle, linked: bool, fonts: &mut Typeface) -> Pixmap {
+    let mut pixmap = Pixmap::new(DASH_W as u32, DASH_H as u32).expect("pixmap");
+    pixmap.fill(color(BACKGROUND));
+    let firmware = vehicle.firmware();
+    let engine = vehicle.engine();
+    text(
+        &mut pixmap,
+        fonts,
+        (40.0, 58.0),
+        32.0,
+        true,
+        color(INK),
+        &format!("{}  {}", firmware.family, firmware.calibration),
+    );
+    text(
+        &mut pixmap,
+        fonts,
+        (40.0, 96.0),
+        20.0,
+        false,
+        color(MUTED),
+        &format!("мотор {}", engine.motor().label()),
+    );
+    let (link, link_color) = if linked {
+        ("панель на связи", color(0x7dc67a))
+    } else {
+        ("жду панель", color(RED))
+    };
+    text(
+        &mut pixmap,
+        fonts,
+        (900.0, 58.0),
+        22.0,
+        false,
+        link_color,
+        link,
+    );
+
+    let speed = engine.speed_kmh().round() as i32;
+    text(
+        &mut pixmap,
+        fonts,
+        (48.0, 250.0),
+        108.0,
+        true,
+        color(INK),
+        &format!("{speed}"),
+    );
+    text(
+        &mut pixmap,
+        fonts,
+        (52.0, 292.0),
+        24.0,
+        false,
+        color(MUTED),
+        "км/ч",
+    );
+    text(
+        &mut pixmap,
+        fonts,
+        (280.0, 250.0),
+        64.0,
+        true,
+        color(AMBER),
+        engine.driver().gear.label(),
+    );
+
+    let center = (230.0, 430.0);
+    let start = 3.55_f32;
+    let sweep = 2.35_f32;
+    ring_arc(
+        &mut pixmap,
+        center,
+        132.0,
+        112.0,
+        start,
+        start + sweep,
+        color(0x2a3340),
+    );
+    let fraction = (engine.rpm() / firmware.rev_limit).clamp(0.0, 1.0);
+    if fraction > 0.01 {
+        ring_arc(
+            &mut pixmap,
+            center,
+            132.0,
+            112.0,
+            start,
+            start + sweep * fraction,
+            color(AMBER),
+        );
+    }
+    let angle = start + sweep * fraction;
+    thick_line(
+        &mut pixmap,
+        center,
+        (center.0 + angle.cos() * 96.0, center.1 + angle.sin() * 96.0),
+        4.0,
+        color(INK),
+    );
+    fill_circle(&mut pixmap, center.0, center.1, 8.0, color(INK));
+    let rpm = format!("{}", engine.rpm().round() as i32);
+    let rpm_w = fonts.width(&rpm, 28.0, true);
+    text(
+        &mut pixmap,
+        fonts,
+        (center.0 - rpm_w * 0.5, center.1 + 46.0),
+        28.0,
+        true,
+        color(INK),
+        &rpm,
+    );
+    text(
+        &mut pixmap,
+        fonts,
+        (center.0 - 36.0, center.1 + 74.0),
+        16.0,
+        false,
+        color(MUTED),
+        "об/мин",
+    );
+    dash_road(
+        &mut pixmap,
+        engine.speed_kmh(),
+        engine.driver().gear == Gear::Reverse,
+    );
+
+    let mut rows = vec![
+        (
+            "Жидкость".to_string(),
+            format!("{} °C", vehicle.coolant.round() as i32),
+        ),
+        (
+            "Дроссель".to_string(),
+            format!("{:.0} %", vehicle.reading("дроссель")),
+        ),
+        (
+            "Впрыск".to_string(),
+            format!("{:.2} мс", vehicle.reading("впрыск")),
+        ),
+        (
+            "Расход воздуха".to_string(),
+            format!("{:.1} кг/ч", vehicle.reading("дмрв")),
+        ),
+        (
+            "Кислород".to_string(),
+            format!("{:.2} В", vehicle.reading("кислород")),
+        ),
+    ];
+    if firmware.has_channel("кислород2") {
+        rows.push((
+            "Кислород 2".to_string(),
+            format!("{:.2} В", vehicle.reading("кислород2")),
+        ));
+    }
+    rows.push((
+        "Коррекция".to_string(),
+        format!("{:.2}", vehicle.reading("коррекция")),
+    ));
+    rows.push((
+        "Напряжение".to_string(),
+        format!("{:.1} В", vehicle.reading("напряжение")),
+    ));
+    rows.push((
+        "Ошибки".to_string(),
+        vehicle.error.unwrap_or("нет").to_string(),
+    ));
+    for (index, (title, value)) in rows.iter().enumerate() {
+        let y = 150.0 + index as f32 * 50.0;
+        text(
+            &mut pixmap,
+            fonts,
+            (520.0, y),
+            18.0,
+            false,
+            color(MUTED),
+            title,
+        );
+        let ink = if title == "Ошибки" && value != "нет" {
+            color(RED)
+        } else {
+            color(INK)
+        };
+        text(
+            &mut pixmap,
+            fonts,
+            (520.0, y + 28.0),
+            24.0,
+            true,
+            ink,
+            value,
+        );
+    }
+
+    let driver = engine.driver();
+    for (hit, rect) in dash_pedals() {
+        let amount = match hit {
+            DashHit::Gas => driver.gas,
+            DashHit::Brake => driver.brake,
+            DashHit::Clutch => driver.clutch,
+            _ => 0.0,
+        };
+        let ink = match hit {
+            DashHit::Gas => color(AMBER),
+            DashHit::Brake => color(RED),
+            _ => color(0xc5ccd4),
+        };
+        fill_rect(&mut pixmap, rect, 16.0, color(PANEL));
+        if amount > 0.02 {
+            fill_rect(
+                &mut pixmap,
+                Rect {
+                    x: rect.x,
+                    y: rect.y + rect.h * (1.0 - amount),
+                    w: rect.w,
+                    h: rect.h * amount,
+                },
+                0.0,
+                ink,
+            );
+        }
+        let label = match hit {
+            DashHit::Gas => "газ",
+            DashHit::Brake => "тормоз",
+            DashHit::Clutch => "сцепл.",
+            _ => "",
+        };
+        let label_ink = if amount > 0.55 {
+            color(BACKGROUND)
+        } else {
+            color(INK)
+        };
+        text(
+            &mut pixmap,
+            fonts,
+            (rect.x + 10.0, rect.y + rect.h - 22.0),
+            16.0,
+            false,
+            label_ink,
+            label,
+        );
+    }
+
+    for (hit, rect) in dash_gears() {
+        let code = match hit {
+            DashHit::Gear(code) => code,
+            _ => 0,
+        };
+        let on = driver.gear.code() == code;
+        fill_rect(
+            &mut pixmap,
+            rect,
+            10.0,
+            if on { color(AMBER) } else { color(PANEL) },
+        );
+        let name = Gear::from_code(code).label();
+        text(
+            &mut pixmap,
+            fonts,
+            (rect.x + 26.0, rect.y + 40.0),
+            24.0,
+            true,
+            if on { color(BACKGROUND) } else { color(INK) },
+            name,
+        );
+    }
+    button_caption(
+        &mut pixmap,
+        fonts,
+        Rect {
+            x: 760.0,
+            y: 668.0,
+            w: 180.0,
+            h: 64.0,
+        },
+        "зажигание",
+        !matches!(engine.motor(), crate::engine::Motor::Off),
+    );
+    button_caption(
+        &mut pixmap,
+        fonts,
+        Rect {
+            x: 960.0,
+            y: 668.0,
+            w: 180.0,
+            h: 64.0,
+        },
+        "стартер",
+        driver.crank,
+    );
+    pixmap
+}
+
+pub fn hit_dashboard(x: f32, y: f32) -> Option<DashHit> {
+    for (hit, rect) in dash_pedals() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    for (hit, rect) in dash_gears() {
+        if rect.contains(x, y) {
+            return Some(hit);
+        }
+    }
+    if (Rect {
+        x: 760.0,
+        y: 668.0,
+        w: 180.0,
+        h: 64.0,
+    })
+    .contains(x, y)
+    {
+        return Some(DashHit::Ignition);
+    }
+    if (Rect {
+        x: 960.0,
+        y: 668.0,
+        w: 180.0,
+        h: 64.0,
+    })
+    .contains(x, y)
+    {
+        return Some(DashHit::Starter);
+    }
+    None
+}
+
+fn dash_pedals() -> [(DashHit, Rect); 3] {
+    let y = 140.0;
+    let h = 500.0;
+    let w = 84.0;
+    [
+        (DashHit::Clutch, Rect { x: 900.0, y, w, h }),
+        (DashHit::Brake, Rect { x: 1000.0, y, w, h }),
+        (DashHit::Gas, Rect { x: 1100.0, y, w, h }),
+    ]
+}
+
+fn dash_gears() -> [(DashHit, Rect); 7] {
+    let keys = [
+        DashHit::Gear(1),
+        DashHit::Gear(2),
+        DashHit::Gear(3),
+        DashHit::Gear(4),
+        DashHit::Gear(5),
+        DashHit::Gear(0),
+        DashHit::Gear(-1),
+    ];
+    let mut row = [(
+        DashHit::Gear(0),
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        },
+    ); 7];
+    for (index, hit) in keys.into_iter().enumerate() {
+        row[index] = (
+            hit,
+            Rect {
+                x: 40.0 + index as f32 * 84.0,
+                y: 668.0,
+                w: 72.0,
+                h: 64.0,
+            },
+        );
+    }
+    row
+}
+
+fn button_caption(pixmap: &mut Pixmap, fonts: &mut Typeface, rect: Rect, label: &str, on: bool) {
+    fill_rect(
+        pixmap,
+        rect,
+        12.0,
+        if on { color(AMBER) } else { color(PANEL) },
+    );
+    text(
+        pixmap,
+        fonts,
+        (rect.x + 18.0, rect.y + 40.0),
+        22.0,
+        false,
+        if on { color(BACKGROUND) } else { color(INK) },
+        label,
+    );
+}
+
+fn dash_road(pixmap: &mut Pixmap, speed: f32, reverse: bool) {
+    let road = Rect {
+        x: 40.0,
+        y: 575.0,
+        w: 460.0,
+        h: 48.0,
+    };
+    fill_rect(pixmap, road, 8.0, color(PANEL));
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|time| time.as_secs_f32())
+        .unwrap_or(0.0);
+    let direction = if reverse { -1.0 } else { 1.0 };
+    let shift = (seconds * speed.max(0.0) * 24.0 * direction).rem_euclid(70.0);
+    let mut x = road.x - 70.0 + shift;
+    while x < road.x + road.w {
+        let mark = Rect {
+            x,
+            y: road.y + 20.0,
+            w: 28.0,
+            h: 6.0,
+        };
+        if mark.x + mark.w > road.x && mark.x < road.x + road.w {
+            fill_rect(pixmap, mark, 0.0, color(AMBER));
+        }
+        x += 70.0;
+    }
+}
+
 fn color(rgb: u32) -> Color {
     Color::from_rgba8((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8, 255)
 }
@@ -1128,6 +1560,27 @@ mod tests {
         assert_ne!(m74.data(), january.data());
         let silent = render(Screen::Readings, &climate, &EcuView::default(), &mut fonts);
         assert_ne!(silent.data(), m74.data());
+    }
+
+    #[test]
+    fn dashboard_shows_both_firmwares_and_hits_the_pedals() {
+        let mut fonts = Typeface::load();
+        let m74 = render_dashboard(&Vehicle::new(), false, &mut fonts);
+        let january = render_dashboard(
+            &Vehicle::with_firmware(crate::firmware::find("январь-7.2").unwrap()),
+            true,
+            &mut fonts,
+        );
+        assert_eq!((m74.width(), m74.height()), (1200, 760));
+        assert_ne!(m74.data(), january.data());
+        assert_eq!(hit_dashboard(1140.0, 400.0), Some(DashHit::Gas));
+        assert_eq!(hit_dashboard(1040.0, 400.0), Some(DashHit::Brake));
+        assert_eq!(hit_dashboard(940.0, 400.0), Some(DashHit::Clutch));
+        assert_eq!(hit_dashboard(80.0, 690.0), Some(DashHit::Gear(1)));
+        assert_eq!(hit_dashboard(800.0, 690.0), Some(DashHit::Ignition));
+        assert_eq!(hit_dashboard(1000.0, 690.0), Some(DashHit::Starter));
+        assert_eq!(Gear::from_code(-1), Gear::Reverse);
+        assert_eq!(Gear::Reverse.code(), -1);
     }
 
     fn linked(id: &str) -> EcuView {

@@ -202,6 +202,31 @@ pub fn parse_car_line(line: &str) -> Option<CarMessage> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DriverCommand {
+    Gas(f32),
+    Brake(f32),
+    Clutch(f32),
+    Gear(i32),
+    Ignition(bool),
+    Crank(bool),
+}
+
+pub fn parse_driver_line(line: &str) -> Option<DriverCommand> {
+    let rest = line.trim().strip_prefix("водитель ")?;
+    let mut parts = rest.split_whitespace();
+    let value = |token: Option<&str>| token?.parse::<f32>().ok();
+    match parts.next()? {
+        "газ" => Some(DriverCommand::Gas(value(parts.next())?.clamp(0.0, 1.0))),
+        "тормоз" => Some(DriverCommand::Brake(value(parts.next())?.clamp(0.0, 1.0))),
+        "сцепление" => Some(DriverCommand::Clutch(value(parts.next())?.clamp(0.0, 1.0))),
+        "передача" => Some(DriverCommand::Gear(parts.next()?.parse().ok()?)),
+        "зажигание" => Some(DriverCommand::Ignition(parts.next()? != "0")),
+        "стартер" => Some(DriverCommand::Crank(parts.next()? != "0")),
+        _ => None,
+    }
+}
+
 pub fn parse_panel_line(line: &str) -> Option<(String, f32)> {
     let rest = line.trim().strip_prefix("выход ")?;
     let (channel, value) = rest.rsplit_once(" значение ")?;
@@ -261,6 +286,14 @@ mod tests {
         assert_eq!(
             parse_car_line("передача 1"),
             Some(CarMessage::Gear("1".into()))
+        );
+        assert_eq!(
+            parse_driver_line("водитель газ 0.5"),
+            Some(DriverCommand::Gas(0.5))
+        );
+        assert_eq!(
+            parse_driver_line("водитель передача -1"),
+            Some(DriverCommand::Gear(-1))
         );
         assert_eq!(
             parse_car_line("положение 1 0.40"),

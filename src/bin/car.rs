@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use openvaz::engine::{Driver, Gear, Motor};
 use openvaz::firmware::{self, Firmware};
-use openvaz::link::parse_panel_line;
+use openvaz::link::{parse_driver_line, parse_panel_line};
 use openvaz::model::celsius_from_unit;
 use openvaz::vehicle::{Vehicle, DAMPERS};
 
@@ -28,8 +28,16 @@ fn main() {
         }
     };
     let mut vehicle = Vehicle::with_firmware(chosen);
-    println!("жду автомобиль на {}", path.display());
     println!("прошивка {}  {}", chosen.id, chosen.calibration);
+    let _ = io::stdout().flush();
+    #[cfg(feature = "window")]
+    if std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        println!("окно автомобиля, сокет {}", path.display());
+        let _ = io::stdout().flush();
+        openvaz::car_window::run(vehicle, path);
+        return;
+    }
+    println!("жду автомобиль на {}", path.display());
     let _ = io::stdout().flush();
     let terminal = RawTerm::claim();
     loop {
@@ -78,6 +86,8 @@ fn print_help() {
     println!("openvaz-car [сокет] [прошивка]");
     println!("Слушает команды панели и отвечает климатом, жидкостью и показаниями ЭБУ.");
     println!("По умолчанию сокет emu/build/car.sock и прошивка итэлма-м74.");
+    println!("Если есть экран, открывается окно: скорость, обороты, педали и передачи.");
+    println!("Без экрана та же машина остаётся таблицей в этом терминале.");
     println!("Прошивки:");
     for firmware in firmware::catalog() {
         println!(
@@ -253,7 +263,10 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream, keyboard: bool) {
                 while let Some(pos) = incoming.iter().position(|byte| *byte == b'\n') {
                     let line: Vec<u8> = incoming.drain(..=pos).collect();
                     let text = String::from_utf8_lossy(&line);
-                    if let Some((channel, value)) = parse_panel_line(&text) {
+                    let text = text.trim();
+                    if let Some(command) = parse_driver_line(text) {
+                        vehicle.apply_panel(command);
+                    } else if let Some((channel, value)) = parse_panel_line(text) {
                         vehicle.apply(&channel, value);
                     }
                 }
