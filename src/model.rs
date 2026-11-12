@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::firmware;
+use crate::hardware::Board;
 use crate::link::{CarMessage, CarPort, LINK_TIMEOUT};
 
 pub const PROFILE_ID: &str = "kalina";
@@ -340,6 +341,9 @@ pub struct Session {
     car: Option<CarPort>,
     last_repeat: Instant,
     last_regulate: Instant,
+    outputs: Outputs,
+    /// Заслонка, чей датчик на старте оказался вне диапазона: команды на неё не уходят.
+    blocked: [bool; 5],
 }
 
 pub struct EcuView {
@@ -437,6 +441,7 @@ impl EcuView {
                     true
                 }
             }
+            CarMessage::Position(_, _) => false,
         };
         link_changed || data_changed
     }
@@ -553,10 +558,11 @@ impl Session {
         climate.air_conditioner = false;
         let mut journal = Journal;
         journal.line(&format!("старт профиль={PROFILE_ID}"));
-        journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
-        for event in climate.boot_events() {
-            journal.output(&event);
+        let events = climate.boot_events();
+        for event in &events {
+            journal.output(event);
         }
+        let outputs = open_outputs(state_dir.as_deref(), &events, &mut journal);
         Self {
             climate,
             screen: Screen::Climate,
@@ -567,6 +573,8 @@ impl Session {
             car: None,
             last_repeat: Instant::now(),
             last_regulate: Instant::now(),
+            outputs,
+            blocked: [false; 5],
         }
     }
 
@@ -744,10 +752,17 @@ impl Session {
     }
 
     fn repeat_commands(&mut self) {
+        if !matches!(self.outputs, Outputs::Text) {
+            return;
+        }
+        let blocked = self.blocked;
         let events = self.climate.boot_events();
         let mut failed = false;
         if let Some(car) = &mut self.car {
             for event in &events {
+                if damper_index(event.channel).is_some_and(|index| blocked[index]) {
+                    continue;
+                }
                 if car.send_command(event.channel, event.value).is_err() {
                     failed = true;
                     break;
@@ -761,18 +776,46 @@ impl Session {
     }
 
     fn publish(&mut self, event: &OutputEvent) {
-        self.journal.output(event);
-        let mut failed = false;
-        if let Some(car) = &mut self.car {
-            failed = car.send_command(event.channel, event.value).is_err();
+        if self.channel_blocked(event.channel) {
+            self.journal
+                .line(&format!("заслонка {} вне диапазона, не трогаю", event.channel));
+            return;
         }
-        if failed {
-            self.car = None;
-            self.journal.line("автомобиль отключён");
+        self.journal.output(event);
+        match &mut self.outputs {
+            Outputs::Text => {
+                let mut failed = false;
+                if let Some(car) = &mut self.car {
+                    failed = car.send_command(event.channel, event.value).is_err();
+                }
+                if failed {
+                    self.car = None;
+                    self.journal.line("автомобиль отключён");
+                }
+            }
+            Outputs::Board(board) => {
+                if let Err(error) = board.command(event) {
+                    self.journal.line(&format!("выход не применён: {error}"));
+                }
+            }
         }
     }
 
     fn note_car(&mut self, message: CarMessage) -> bool {
+        if let CarMessage::Position(channel, value) = &message {
+            if let Some(index) = damper_index(channel) {
+                let blocked = value.is_none();
+                self.blocked[index] = blocked;
+                if blocked {
+                    self.journal
+                        .line(&format!("заслонка {channel} вне диапазона, не трогаю"));
+                } else {
+                    self.journal
+                        .line(&format!("положение {channel} {:.2}", value.unwrap_or(0.0)));
+                }
+            }
+            return false;
+        }
         let changed = self.ecu.apply(&message);
         if changed {
             match &message {
@@ -800,7 +843,8 @@ impl Session {
                 | CarMessage::Cabin(_)
                 | CarMessage::Motor(_)
                 | CarMessage::Gear(_)
-                | CarMessage::Pedals(_, _, _) => {}
+                | CarMessage::Pedals(_, _, _)
+                | CarMessage::Position(_, _) => {}
             }
         }
         changed
@@ -813,6 +857,54 @@ impl Session {
                     .line(&format!("настройки не записаны: {error}"));
             }
         }
+    }
+}
+
+enum Outputs {
+    Text,
+    Board(Board),
+}
+
+fn damper_index(channel: &str) -> Option<usize> {
+    match channel {
+        "0" => Some(0),
+        "1" => Some(1),
+        "2" => Some(2),
+        "3" => Some(3),
+        "4" => Some(4),
+        _ => None,
+    }
+}
+
+fn open_outputs(state_dir: Option<&Path>, events: &[OutputEvent], journal: &mut Journal) -> Outputs {
+    if std::env::var("OPENVAS_OUTPUT").as_deref() != Ok("hardware") {
+        journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
+        return Outputs::Text;
+    }
+    match Board::open(state_dir) {
+        Ok(mut board) => {
+            match board.boot(events) {
+                Ok(lines) => {
+                    for line in lines {
+                        journal.line(&line);
+                    }
+                }
+                Err(error) => journal.line(&format!("выходы: {error}")),
+            }
+            Outputs::Board(board)
+        }
+        Err(error) => {
+            journal.line(&format!("выходы не открыты: {error}"));
+            journal.line("импульсы запрещены, панель остаётся на текстовом порту");
+            journal.line("чтение положений: датчиков нет, команда по сохранённым значениям");
+            Outputs::Text
+        }
+    }
+}
+
+impl Session {
+    fn channel_blocked(&self, channel: &str) -> bool {
+        damper_index(channel).is_some_and(|index| self.blocked[index])
     }
 }
 
@@ -950,6 +1042,16 @@ mod tests {
         climate.toggle_face();
         climate.toggle_feet();
         assert!(climate.face && climate.feet && !climate.glass);
+    }
+
+    #[test]
+    fn a_failed_position_blocks_only_that_damper() {
+        let mut session = Session::boot(None);
+        session.note_car(CarMessage::Position("2".into(), None));
+        assert!(session.channel_blocked("2"));
+        assert!(!session.channel_blocked("1"));
+        session.note_car(CarMessage::Position("2".into(), Some(0.4)));
+        assert!(!session.channel_blocked("2"));
     }
 
     #[test]

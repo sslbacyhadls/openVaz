@@ -19,6 +19,8 @@ pub enum CarMessage {
     Motor(String),
     Gear(String),
     Pedals(f32, f32, f32),
+    /// Положение заслонки 0–4 в долях хода. `None` — датчик вне диапазона, заслонку не трогать.
+    Position(String, Option<f32>),
 }
 
 pub fn car_path() -> PathBuf {
@@ -180,6 +182,22 @@ pub fn parse_car_line(line: &str) -> Option<CarMessage> {
                 None
             }
         }
+        "положение" => {
+            let channel = parts.next()?.to_string();
+            if channel.is_empty() {
+                return None;
+            }
+            match parts.next()? {
+                "нет" => Some(CarMessage::Position(channel, None)),
+                text => {
+                    let value = text.parse::<f32>().ok()?;
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    Some(CarMessage::Position(channel, Some(value)))
+                }
+            }
+        }
         _ => None,
     }
 }
@@ -237,6 +255,14 @@ mod tests {
         assert_eq!(
             parse_car_line("передача 1"),
             Some(CarMessage::Gear("1".into()))
+        );
+        assert_eq!(
+            parse_car_line("положение 1 0.40"),
+            Some(CarMessage::Position("1".into(), Some(0.40)))
+        );
+        assert_eq!(
+            parse_car_line("положение 2 нет"),
+            Some(CarMessage::Position("2".into(), None))
         );
     }
 }

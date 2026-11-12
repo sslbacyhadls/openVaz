@@ -2,6 +2,7 @@ pub mod cabin;
 pub mod engine;
 pub mod fb;
 pub mod firmware;
+pub mod hardware;
 pub mod layout;
 pub mod link;
 pub mod model;
