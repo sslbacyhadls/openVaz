@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --no-default-features
+      - name: Сборка панели под aarch64
+        run: |
+          host=$(rustc -vV | sed -n 's/host: //p')
+          export PATH="$(rustc --print sysroot)/lib/rustlib/${host}/bin:${PATH}"
+          cargo build --release --target aarch64-unknown-linux-musl --no-default-features

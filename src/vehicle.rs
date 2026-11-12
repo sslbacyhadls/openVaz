@@ -48,7 +48,8 @@ impl Vehicle {
     pub fn tick(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 1.0);
         for index in 0..5 {
-            self.position[index] = slew(self.position[index], self.target[index], SERVO_PER_SEC * dt);
+            self.position[index] =
+                slew(self.position[index], self.target[index], SERVO_PER_SEC * dt);
         }
         self.fan = slew(self.fan, self.fan_cmd, FAN_PER_SEC * dt);
         let heat = if self.clutch { 8.0 } else { 0.0 };
@@ -57,7 +58,11 @@ impl Vehicle {
         self.coolant += (goal - self.coolant) * blend;
         self.coolant = self.coolant.clamp(10.0, 120.0);
         self.clutch = self.ac_request && self.fan >= 0.2 && self.coolant < 105.0;
-        self.error = if self.coolant >= 105.0 { Some("P0217") } else { None };
+        self.error = if self.coolant >= 105.0 {
+            Some("P0217")
+        } else {
+            None
+        };
     }
 
     pub fn damper_command(&self, index: usize) -> f32 {

@@ -70,7 +70,7 @@ fn session(vehicle: &mut Vehicle, mut stream: UnixStream) {
         }
         if last_status.elapsed() >= Duration::from_millis(200) {
             for line in vehicle.status_lines() {
-                if write!(stream, "{line}\n").is_err() {
+                if writeln!(stream, "{line}").is_err() {
                     return;
                 }
             }
@@ -97,20 +97,21 @@ fn draw(vehicle: &Vehicle, shown: &mut String) {
     let mut frame = String::from("\x1b[H");
     frame.push_str(&fit("Автомобиль  Kalina"));
     frame.push('\n');
-    for index in 0..5 {
+    for (index, name) in DAMPERS.iter().enumerate() {
         let command = vehicle.damper_command(index);
         let position = vehicle.damper_position(index);
-        let mut line = format!(
-            "{:<14} команда {command:.2}   положение {position:.2}",
-            DAMPERS[index]
-        );
+        let mut line = format!("{name:<14} команда {command:.2}   положение {position:.2}");
         if index == 1 {
             line.push_str(&format!("   задание {} °C", celsius_from_unit(command)));
         }
         frame.push_str(&fit(&line));
         frame.push('\n');
     }
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
     frame.push_str(&fit(&format!(
         "вентилятор     команда {:.2}   факт {:.2}",
@@ -138,7 +139,11 @@ fn draw(vehicle: &Vehicle, shown: &mut String) {
 
 fn compact(vehicle: &Vehicle) -> String {
     let clutch = if vehicle.clutch { "вкл" } else { "выкл" };
-    let request = if vehicle.ac_request() { "вкл" } else { "выкл" };
+    let request = if vehicle.ac_request() {
+        "вкл"
+    } else {
+        "выкл"
+    };
     format!(
         "охлаждение {} °C  задание {} °C  заслонка {:.2}  муфта {clutch}  запрос {request}  вентилятор {:.2}  ошибки {}",
         vehicle.coolant.round() as i32,
